@@ -1,0 +1,1949 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FERRETERIA EL TRICOLOR</title>
+
+    <!-- PWA -->
+    <link rel="manifest" href="./manifest.json">
+    <meta name="theme-color" content="#2563eb">
+    <link rel="icon" href="./icon-192.png">
+    <link rel="apple-touch-icon" href="./icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="El Tricolor">
+
+    <!-- Librería XLSX para procesamiento de Excel (XLS, XLSX y CSV) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --success: #16a34a;
+            --warning: #d97706;
+            --danger: #dc2626;
+            --background: #f8fafc;
+            --surface: #ffffff;
+            --text: #0f172a;
+            --border: #e2e8f0;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: var(--background);
+            color: var(--text);
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 1fr 320px;
+            gap: 20px;
+        }
+
+        header {
+            grid-column: 1 / -1;
+            background: #1e293b;
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .cartel-titulo {
+            font-size: 32px;
+            font-weight: 900;
+            color: #ff2222;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            text-shadow: 
+                -2px -2px 0 #000,  
+                 2px -2px 0 #000,
+                -2px  2px 0 #000,
+                 2px  2px 0 #000,
+                 4px  4px 0px rgba(0,0,0,0.5);
+        }
+
+        .sidebar {
+            background: var(--surface);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            height: fit-content;
+        }
+
+        .main-content {
+            background: var(--surface);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        /* Modificación del cuadrante del carrito */
+        .cart-box {
+            background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+            border: 1px solid #93c5fd;
+            padding: 22px 15px;
+            border-radius: 12px;
+            text-align: center;
+            font-size: 16px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .cart-box:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 12px -2px rgba(37, 99, 235, 0.15);
+        }
+
+        .cart-icon {
+            width: 38px;
+            height: 38px;
+            fill: #2563eb;
+            margin-bottom: 6px;
+        }
+
+        .sidebar-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid var(--border);
+        }
+
+        .btn-sidebar {
+            width: 100%;
+            padding: 13px 19px !important;
+            font-size: 15px !important;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            border: none;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+
+        .btn-sidebar:active {
+            transform: scale(0.98);
+        }
+
+        button {
+            padding: 8px 14px;
+            border-radius: 6px;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: var(--primary-dark); }
+        .btn-success { background: var(--success); color: white; }
+        .btn-warning { background: var(--warning); color: white; }
+        .btn-danger { background: var(--danger); color: white; }
+        .btn-secondary { background: #64748b; color: white; }
+
+        .btn-qty {
+            background: #cbd5e1;
+            color: #0f172a;
+            width: 28px;
+            height: 28px;
+            padding: 0;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 4px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .btn-qty:hover { background: #94a3b8; }
+
+        .btn-stock-quick {
+            background: #e2e8f0;
+            color: #1e293b;
+            width: 24px;
+            height: 24px;
+            padding: 0;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 4px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 2px;
+            border: 1px solid #cbd5e1;
+        }
+        .btn-stock-quick:hover { background: #cbd5e1; }
+
+        .search-bar {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            margin-bottom: 15px;
+            font-size: 15px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 14px;
+        }
+
+        th, td {
+            padding: 10px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th { background-color: #f1f5f9; }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 25px;
+            border-radius: 8px;
+            max-width: 650px;
+            width: 90%;
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+
+        .admin-only { display: none; }
+        .modo-admin .admin-only { display: block; }
+        .modo-admin tr.admin-only { display: table-row; }
+
+        .pagination-container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px solid var(--border);
+        }
+
+        #toastContainer {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .toast {
+            background: #0f172a;
+            color: white;
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            animation: fadeIn 0.3s forwards;
+            border-left: 4px solid var(--success);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        @media print {
+            .no-print, header, .sidebar, .search-bar, .pagination-container, #toastContainer, .modal-header button, .btn-danger, .btn-warning, .btn-primary, .btn-secondary {
+                display: none !important;
+            }
+            body { padding: 0; background: white; }
+            .container { display: block; }
+            .modal { position: absolute; left: 0; top: 0; background: white; display: block !important; width: 100%; height: auto; }
+            .modal-content { max-width: 100%; max-height: none !important; overflow: visible !important; box-shadow: none; border: none; padding: 0; }
+            .scroll-inner-modal { max-height: none !important; overflow: visible !important; }
+            
+            .remito-container, .remito-container * {
+                font-family: Tahoma, Geneva, sans-serif !important;
+                font-size: 14px !important;
+                color: #000 !important;
+            }
+            .remito-header-title {
+                font-size: 22px !important;
+                font-weight: bold !important;
+            }
+            table, tr, td, th { page-break-inside: avoid; }
+            thead { display: table-header-group; }
+        }
+
+        /* ===== AJUSTES PARA PANTALLAS CHICAS (CELULAR) ===== */
+        .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+        @media (max-width: 800px) {
+            body { padding: 10px; }
+
+            .container {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+                padding: 14px;
+            }
+            header > div { width: 100%; justify-content: space-between; flex-wrap: wrap; }
+
+            .cartel-titulo {
+                font-size: 19px;
+                letter-spacing: 0.5px;
+                text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000;
+            }
+
+
+            .main-content, .sidebar { padding: 14px; }
+
+            .search-bar { font-size: 16px; padding: 12px; } /* 16px evita el zoom automático de iOS */
+
+            table { min-width: 620px; font-size: 13px; }
+            th, td { padding: 8px 6px; }
+
+            .btn-qty { width: 34px; height: 34px; font-size: 17px; }
+            .btn-stock-quick { width: 30px; height: 30px; font-size: 15px; }
+
+            button { padding: 9px 12px; font-size: 13px; }
+
+            .pagination-container { flex-direction: column; gap: 10px; align-items: stretch; text-align: center; }
+            .pagination-container > div { display: flex; justify-content: center; align-items: center; }
+
+            .cart-box { padding: 18px 12px; }
+
+            #toastContainer { left: 10px; right: 10px; bottom: 10px; }
+            .toast { font-size: 13px; }
+
+            .modal-content { width: 94%; padding: 16px; max-height: 90vh; }
+        }
+
+        @media (max-width: 420px) {
+            .cartel-titulo { font-size: 16px; }
+            table { min-width: 560px; }
+        }
+        /* ===== PANTALLA DE LOGIN ===== */
+        #loginScreen {
+            display: none;
+            min-height: 100vh;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            padding: 20px;
+            background: var(--background);
+        }
+        #loginScreen img { width: 130px; height: auto; margin-bottom: 6px; }
+        #loginScreen h2 { margin: 0 0 10px 0; color: var(--text); text-align: center; }
+        #loginBox { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 24px; width: 100%; max-width: 360px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+        #loginBox input { width: 100%; padding: 12px; margin-bottom: 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 15px; box-sizing: border-box; }
+        #loginBox button { width: 100%; padding: 12px; font-size: 15px; }
+        #loginError { color: var(--danger); font-size: 13px; min-height: 18px; text-align: center; margin-top: 4px; }
+        #loginCargando { text-align: center; color: #64748b; font-size: 14px; }
+        .btn-logout { background: var(--danger); color: white; font-size: 12px; padding: 8px 12px; }
+    </style>
+</head>
+<body>
+
+    <div id="toastContainer"></div>
+
+    <!-- PANTALLA DE LOGIN -->
+    <div id="loginScreen">
+        <div id="loginCargando">Cargando…</div>
+        <img src="./icon-512.png" alt="Ferretería El Tricolor" style="display:none;" id="loginLogo">
+        <h2 style="display:none;" id="loginTitulo">Ferretería El Tricolor</h2>
+        <div id="loginBox" style="display:none;">
+            <input type="email" id="loginEmail" placeholder="Correo electrónico" autocomplete="username">
+            <input type="password" id="loginPassword" placeholder="Contraseña" autocomplete="current-password">
+            <button class="btn-primary" onclick="iniciarSesion()">Ingresar</button>
+            <div id="loginError"></div>
+        </div>
+    </div>
+
+    <div class="container" id="appContainer" style="display:none;">
+        <header>
+            <h1 class="cartel-titulo">🛠️ FERRETERIA EL TRICOLOR</h1>
+            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <span id="usuarioActualLabel" style="font-size:12px; color:#64748b;"></span>
+                <div id="adminBadge" style="display:none; background: #fef3c7; color: #92400e; padding: 6px 14px; border-radius: 20px; font-weight: bold; font-size: 12px; border: 1px solid #fde68a;">
+                    🔓 MODO ADMINISTRADOR ACTIVADO
+                </div>
+                <button class="btn-logout" onclick="cerrarSesion()">🚪 Cerrar sesión</button>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <input type="text" id="inputBusqueda" class="search-bar" placeholder="🔍 Buscar producto por código o nombre..." onkeyup="buscarProductos()">
+
+            <div class="table-wrapper">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Foto</th>
+                        <th>Código</th>
+                        <th>Producto</th>
+                        <th>Stock</th>
+                        <th class="admin-only">Costo</th>
+                        <th>Precio Venta</th>
+                        <th>Acción</th>
+                    </tr>
+                </thead>
+                <tbody id="tablaProductos"></tbody>
+            </table>
+            </div>
+
+            <div class="pagination-container">
+                <span id="infoPaginacion" style="font-size: 13px; color: #64748b;">Mostrando 0 productos</span>
+                <div>
+                    <button class="btn-secondary" onclick="paginaAnterior()">◀ Anterior</button>
+                    <span id="numPagina" style="margin: 0 10px; font-weight: bold;">1</span>
+                    <button class="btn-secondary" onclick="paginaSiguiente()">Siguiente ▶</button>
+                </div>
+            </div>
+        </main>
+
+        <aside class="sidebar">
+            <h3 style="margin-bottom: 15px;">Ventas</h3>
+            
+            <!-- Cuadrante de Carrito optimizado en altura e ícono SVG -->
+            <div class="cart-box" onclick="verCarrito()" style="cursor: pointer;">
+                <div>
+                    <svg class="cart-icon" viewBox="0 0 24 24">
+                        <path d="M17 18c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2zM7 18c-1.1 0-1.99.9-1.99 2s.89 2 1.99 2 2-.9 2-2-.9-2-2-2zM7 15l1.1-2h7.45c.75 0 1.41-.41 1.75-1.03l3.58-6.49c.37-.66-.11-1.48-.87-1.48H5.21l-.94-2H1v2h2l3.6 7.59-1.35 2.44C4.52 15.37 5.48 17 7 17h12v-2H7l1.1-2z"/>
+                    </svg>
+                </div>
+                <div style="font-weight: 600; color: #1e3a8a; margin-bottom: 4px;">
+                    Carrito: <strong id="cartCount">0</strong> un.
+                </div>
+                <div id="cartTotal" style="color: var(--success); font-weight: 800; font-size: 22px;">$ 0</div>
+            </div>
+
+            <div class="sidebar-actions">
+                <button class="btn-sidebar btn-secondary" onclick="verCierreCajaSemanal()">
+                    📊 Cierre de Caja
+                </button>
+                <button class="btn-sidebar btn-warning" onclick="toggleModoAdmin()">
+                    🔐 Panel Administrador
+                </button>
+            </div>
+
+            <div class="admin-only" style="margin-top: 25px; padding-top: 15px; border-top: 1px solid var(--border);">
+                <h4 style="margin-bottom: 10px; color: #64748b;">Herramientas Admin</h4>
+                <button class="btn-primary" style="width:100%; margin-bottom: 8px;" onclick="abrirModalNuevoProducto()">➕ Nuevo Producto</button>
+                <button class="btn-danger" style="width:100%; margin-bottom: 8px;" onclick="verReporteFaltantes()">⚠️ Reporte Faltantes (Stock 0)</button>
+                <button class="btn-danger" style="width:100%; margin-bottom: 8px;" onclick="confirmarEliminarSinStock()">🗑️ Eliminar Productos Sin Stock</button>
+                <button class="btn-warning" style="width:100%; margin-bottom: 8px;" onclick="aplicarAumentoGeneral()">📈 Aumento Global %</button>
+                
+                <!-- Botón 1: Actualización de Precios Rápida -->
+                <button class="btn-secondary" style="width:100%; margin-bottom: 8px; background: #3b82f6;" onclick="document.getElementById('inputExcelPrecios').click()">🔄 Actualizar Precios (2 Col.)</button>
+                <input type="file" id="inputExcelPrecios" accept=".xlsx, .xls, .csv" style="display:none" onchange="importarExcelSoloPrecios(event)">
+
+                <!-- Botón 2: Importación Lista Nueva Completa -->
+                <button class="btn-secondary" style="width:100%; margin-bottom: 8px;" onclick="document.getElementById('inputExcelCompleto').click()">📥 Cargar Lista Nueva (6 Col.)</button>
+                <input type="file" id="inputExcelCompleto" accept=".xlsx, .xls, .csv" style="display:none" onchange="importarExcelCompleto(event)">
+
+                <button class="btn-secondary" style="width:100%; margin-bottom: 8px;" onclick="exportarDatos()">💾 Exportar Copia</button>
+                <button class="btn-secondary" style="width:100%;" onclick="document.getElementById('inputJSON').click()">📤 Importar Copia</button>
+                <input type="file" id="inputJSON" accept=".json" style="display:none" onchange="importarDatosRespaldo(event)">
+            </div>
+
+            <div style="margin-top: 20px; padding-top: 15px; border-top: 1px solid var(--border);">
+                <h4 style="margin-bottom: 10px;">🏆 Más Vendidos</h4>
+                <div id="rankingContainer"></div>
+            </div>
+        </aside>
+    </div>
+
+    <!-- MODAL GENERAL DE OPERACIONES -->
+    <div class="modal" id="modalOperacion">
+        <div class="modal-content">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;" class="modal-header">
+                <h3 id="modalTitulo">Modal</h3>
+                <button onclick="cerrarModal()" style="background:none; border:none; font-size: 20px; cursor:pointer;" class="no-print">❌</button>
+            </div>
+            <div id="modalBody"></div>
+        </div>
+    </div>
+
+    <script>
+        let productos = [];
+        let carritoVenta = [];
+        let historialVentas = [];
+        let esAdmin = false;
+        let descuentoConfigurado = 10; 
+        let descuentoAplicadoCarrito = false;
+
+        let paginaActual = 1;
+        const itemsPorPagina = 50;
+        let filtroCierreDesde = '';
+        let filtroCierreHasta = '';
+
+        let unsubProductos = null;
+        let unsubVentas = null;
+
+        function fechaISOLocal(d) {
+            // Usa el día/mes/año LOCAL (no UTC) para evitar que ventas de la tarde/noche
+            // se registren con la fecha del día siguiente.
+            const anio = d.getFullYear();
+            const mes = String(d.getMonth() + 1).padStart(2, '0');
+            const dia = String(d.getDate()).padStart(2, '0');
+            return `${anio}-${mes}-${dia}`;
+        }
+        let productosFiltrados = [];
+
+        // ===== LOGIN / SESIÓN =====
+        async function iniciarSesion() {
+            const email = document.getElementById('loginEmail').value.trim();
+            const pass = document.getElementById('loginPassword').value;
+            const errorDiv = document.getElementById('loginError');
+            errorDiv.textContent = '';
+            if (!email || !pass) { errorDiv.textContent = 'Completá correo y contraseña.'; return; }
+            try {
+                await window.FB.signInWithEmailAndPassword(window.FB.auth, email, pass);
+            } catch (e) {
+                errorDiv.textContent = 'Correo o contraseña incorrectos.';
+            }
+        }
+
+        async function cerrarSesion() {
+            if (unsubProductos) { unsubProductos(); unsubProductos = null; }
+            if (unsubVentas) { unsubVentas(); unsubVentas = null; }
+            await window.FB.signOut(window.FB.auth);
+        }
+
+        // Llamado desde el script de Firebase cuando cambia el estado de sesión
+        window.onFirebaseAuthReady = function(user) {
+            document.getElementById('loginCargando').style.display = 'none';
+            document.getElementById('loginLogo').style.display = 'block';
+            document.getElementById('loginTitulo').style.display = 'block';
+            document.getElementById('loginBox').style.display = 'block';
+
+            if (user) {
+                document.getElementById('loginScreen').style.display = 'none';
+                document.getElementById('appContainer').style.display = '';
+                document.getElementById('usuarioActualLabel').textContent = user.email;
+                iniciarSincronizacion();
+            } else {
+                document.getElementById('loginScreen').style.display = 'flex';
+                document.getElementById('appContainer').style.display = 'none';
+                if (unsubProductos) { unsubProductos(); unsubProductos = null; }
+                if (unsubVentas) { unsubVentas(); unsubVentas = null; }
+            }
+        };
+
+        window.onFirebaseAuthError = function(mensaje) {
+            document.getElementById('loginCargando').textContent = '⚠️ ' + mensaje;
+        };
+
+        function iniciarSincronizacion() {
+            const { db, collection, onSnapshot } = window.FB;
+
+            if (unsubProductos) unsubProductos();
+            unsubProductos = onSnapshot(collection(db, 'ferreteria_productos'), (snap) => {
+                productos = snap.docs.map(d => d.data());
+                guardarYRenderizar(false, true);
+            }, (err) => {
+                mostrarNotificacion('⚠️ Error de sincronización de productos: ' + err.message);
+            });
+
+            if (unsubVentas) unsubVentas();
+            unsubVentas = onSnapshot(collection(db, 'ferreteria_ventas'), (snap) => {
+                historialVentas = snap.docs.map(d => d.data());
+                historialVentas.sort((a, b) => (a.timestampMs || 0) - (b.timestampMs || 0));
+                actualizarRanking();
+            }, (err) => {
+                mostrarNotificacion('⚠️ Error de sincronización de ventas: ' + err.message);
+            });
+        }
+
+        function mostrarNotificacion(mensaje) {
+            let container = document.getElementById('toastContainer');
+            let toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.textContent = mensaje;
+            container.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        function guardarYRenderizar(guardarHistorial = true, mantenerPagina = true) {
+            productos.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+
+            let container = document.getElementById('appContainer');
+            let badge = document.getElementById('adminBadge');
+            
+            if (esAdmin) {
+                container.classList.add('modo-admin');
+                badge.style.display = 'block';
+            } else {
+                container.classList.remove('modo-admin');
+                badge.style.display = 'none';
+            }
+
+            buscarProductos(mantenerPagina);
+            actualizarRanking();
+        }
+
+        function calcularPrecioFinal(p) {
+            let costoBase = parseFloat(p.costo) || 0;
+            let descuento = parseFloat(p.descuento) || 0;
+            let impuesto = parseFloat(p.impuesto) || 0;
+            let otro = parseFloat(p.otro) || 0;
+            let margen = parseFloat(p.margen) || 0;
+
+            let costoNeto = costoBase * (1 - (descuento / 100));
+            let totalImpuestos = impuesto + otro;
+            let costoFinal = costoNeto * (1 + (totalImpuestos / 100));
+            return Math.round(costoFinal * (1 + (margen / 100)));
+        }
+
+        // Redimensiona y comprime una foto antes de guardarla (así no se llena el almacenamiento del navegador)
+        function leerImagenComoBase64(file, maxDim, calidad) {
+            return new Promise((resolve, reject) => {
+                if (!file.type.startsWith('image/')) { reject(new Error('El archivo no es una imagen')); return; }
+                const reader = new FileReader();
+                reader.onerror = () => reject(new Error('No se pudo leer el archivo'));
+                reader.onload = (e) => {
+                    const img = new Image();
+                    img.onerror = () => reject(new Error('No se pudo abrir la imagen'));
+                    img.onload = () => {
+                        let w = img.width, h = img.height;
+                        if (w > h && w > maxDim) { h = Math.round(h * maxDim / w); w = maxDim; }
+                        else if (h >= w && h > maxDim) { w = Math.round(w * maxDim / h); h = maxDim; }
+                        const canvas = document.createElement('canvas');
+                        canvas.width = w; canvas.height = h;
+                        canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+                        resolve(canvas.toDataURL('image/jpeg', calidad));
+                    };
+                    img.src = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            });
+        }
+
+        let fotoNuevaBase64 = null;
+        async function manejarFotoNueva(input) {
+            const file = input.files[0];
+            if (!file) return;
+            try {
+                fotoNuevaBase64 = await leerImagenComoBase64(file, 480, 0.72);
+                let prev = document.getElementById('previewNewFoto');
+                prev.src = fotoNuevaBase64;
+                prev.style.display = 'inline-block';
+            } catch (e) {
+                mostrarNotificacion('⚠️ No se pudo procesar esa imagen.');
+            }
+        }
+
+        let fotoEditBase64 = null;
+        async function manejarFotoEdit(input) {
+            const file = input.files[0];
+            if (!file) return;
+            try {
+                fotoEditBase64 = await leerImagenComoBase64(file, 480, 0.72);
+                let prev = document.getElementById('previewEditFoto');
+                prev.src = fotoEditBase64;
+                prev.style.display = 'inline-block';
+                let btnQuitar = document.getElementById('btnQuitarFotoEdit');
+                if (btnQuitar) btnQuitar.style.display = 'inline-block';
+            } catch (e) {
+                mostrarNotificacion('⚠️ No se pudo procesar esa imagen.');
+            }
+        }
+
+        function quitarFotoEdit() {
+            fotoEditBase64 = null;
+            let prev = document.getElementById('previewEditFoto');
+            prev.src = '';
+            prev.style.display = 'none';
+            let btnQuitar = document.getElementById('btnQuitarFotoEdit');
+            if (btnQuitar) btnQuitar.style.display = 'none';
+        }
+
+        function buscarProductos(mantenerPagina = false) {
+            let busqueda = document.getElementById('inputBusqueda').value.toLowerCase().trim();
+            productosFiltrados = productos.filter(p => 
+                p.codigo.toLowerCase().includes(busqueda) || 
+                p.nombre.toLowerCase().includes(busqueda)
+            );
+            productosFiltrados.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+            
+            if (!mantenerPagina) {
+                paginaActual = 1;
+            }
+            
+            let totalPaginas = Math.ceil(productosFiltrados.length / itemsPorPagina) || 1;
+            if (paginaActual > totalPaginas) {
+                paginaActual = totalPaginas;
+            }
+
+            renderizarTablaPaginada();
+        }
+
+        function renderizarTablaPaginada() {
+            let tbody = document.getElementById('tablaProductos');
+            tbody.innerHTML = '';
+
+            let inicio = (paginaActual - 1) * itemsPorPagina;
+            let fin = inicio + itemsPorPagina;
+            let paginaItems = productosFiltrados.slice(inicio, fin);
+
+            paginaItems.forEach((p) => {
+                let indexOriginal = productos.findIndex(prod => prod.codigo === p.codigo);
+                let tr = document.createElement('tr');
+                let stockColor = p.stock <= 0 ? 'color: red; font-weight: bold;' : (p.stock <= 5 ? 'color: orange; font-weight: bold;' : '');
+                
+                let stockHTML = p.stock === 0 ? 'AGOTADO (0)' : p.stock;
+                if (esAdmin) {
+                    stockHTML = `
+                        <div style="display:flex; align-items:center;">
+                            <button class="btn-stock-quick" onclick="modificarStockRapido(${indexOriginal}, -1)">-</button>
+                            <span style="margin:0 6px; ${stockColor}">${p.stock}</span>
+                            <button class="btn-stock-quick" onclick="modificarStockRapido(${indexOriginal}, 1)">+</button>
+                        </div>
+                    `;
+                } else {
+                    stockHTML = `<span style="${stockColor}">${stockHTML}</span>`;
+                }
+
+                let fotoHTML = p.foto
+                    ? `<img src="${p.foto}" style="width:40px; height:40px; object-fit:cover; border-radius:6px; border:1px solid var(--border);">`
+                    : `<div style="width:40px; height:40px; border-radius:6px; background:#e2e8f0; display:flex; align-items:center; justify-content:center; color:#94a3b8; font-size:18px;">📦</div>`;
+
+                tr.innerHTML = `
+                    <td>${fotoHTML}</td>
+                    <td>${p.codigo}</td>
+                    <td>${p.nombre}</td>
+                    <td>${stockHTML}</td>
+                    <td class="admin-only">$ ${p.costo.toLocaleString()}</td>
+                    <td><strong>$ ${p.precioVenta.toLocaleString()}</strong></td>
+                    <td>
+                        <button class="btn-success" onclick="agregarAlCarrito(${indexOriginal})">🛒 Agregar</button>
+                        ${esAdmin ? `<button class="btn-warning" onclick="editarProducto(${indexOriginal})" style="margin-left:5px;">✏️</button>` : ''}
+                        ${esAdmin ? `<button class="btn-danger" onclick="eliminarProducto(${indexOriginal})" style="margin-left:5px;">🗑️</button>` : ''}
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+
+            let totalPaginas = Math.ceil(productosFiltrados.length / itemsPorPagina) || 1;
+            document.getElementById('numPagina').textContent = `${paginaActual} / ${totalPaginas}`;
+            document.getElementById('infoPaginacion').textContent = `Mostrando ${paginaItems.length} de ${productosFiltrados.length} productos`;
+        }
+
+        async function modificarStockRapido(index, delta) {
+            let p = productos[index];
+            let nuevoStock = p.stock + delta;
+            if (nuevoStock < 0) return;
+            nuevoStock = Math.round(nuevoStock * 100) / 100;
+            try {
+                const { db, doc, updateDoc } = window.FB;
+                await updateDoc(doc(db, 'ferreteria_productos', p.codigo), { stock: nuevoStock });
+            } catch (err) {
+                mostrarNotificacion('❌ No se pudo actualizar el stock: ' + err.message);
+            }
+        }
+
+        function paginaAnterior() {
+            if (paginaActual > 1) {
+                paginaActual--;
+                renderizarTablaPaginada();
+            }
+        }
+
+        function paginaSiguiente() {
+            let totalPaginas = Math.ceil(productosFiltrados.length / itemsPorPagina);
+            if (paginaActual < totalPaginas) {
+                paginaActual++;
+                renderizarTablaPaginada();
+            }
+        }
+
+        /* 1. IMPORTAR SOLO PRECIOS (2 COLUMNAS: CÓDIGO Y COSTO BASE) */
+        async function importarExcelSoloPrecios(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const sheet = workbook.Sheets[sheetName];
+                
+                const datosBrutos = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                
+                if (datosBrutos.length <= 1) {
+                    mostrarNotificacion("⚠️ La planilla seleccionada está vacía.");
+                    return;
+                }
+
+                let actualizaciones = [];
+                let noEncontrados = 0;
+
+                for (let i = 1; i < datosBrutos.length; i++) {
+                    const fila = datosBrutos[i];
+                    if (!fila || fila.length === 0) continue;
+
+                    let codigo = fila[0] ? String(fila[0]).trim() : '';
+                    let nuevoCosto = parseFloat(fila[1]) || 0;
+
+                    if (codigo) {
+                        let existente = productos.find(p => p.codigo === codigo);
+                        if (existente) {
+                            let actualizado = { ...existente, costo: nuevoCosto };
+                            actualizado.precioVenta = calcularPrecioFinal(actualizado);
+                            actualizaciones.push(actualizado);
+                        } else {
+                            noEncontrados++;
+                        }
+                    }
+                }
+
+                try {
+                    const { db, doc, writeBatch } = window.FB;
+                    for (let i = 0; i < actualizaciones.length; i += 400) {
+                        const lote = actualizaciones.slice(i, i + 400);
+                        const batch = writeBatch(db);
+                        lote.forEach(p => batch.set(doc(db, 'ferreteria_productos', p.codigo), p));
+                        await batch.commit();
+                    }
+                    mostrarNotificacion(`🔄 ${actualizaciones.length} precios actualizados. (${noEncontrados} no encontrados)`);
+                } catch (err) {
+                    mostrarNotificacion('❌ Error al subir los precios: ' + err.message);
+                }
+                event.target.value = '';
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        /* 2. IMPORTAR LISTA COMPLETA (6 COLUMNAS: CÓDIGO, NOMBRE, COSTO, IVA, OTROS, DESCUENTO) */
+        async function importarExcelCompleto(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, { type: 'array' });
+                const sheetName = workbook.SheetNames[0];
+                const sheet = workbook.Sheets[sheetName];
+                
+                const datosBrutos = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                
+                if (datosBrutos.length <= 1) {
+                    mostrarNotificacion("⚠️ La planilla seleccionada está vacía.");
+                    return;
+                }
+
+                let nuevosProductos = [];
+
+                for (let i = 1; i < datosBrutos.length; i++) {
+                    const fila = datosBrutos[i];
+                    if (!fila || fila.length === 0) continue;
+
+                    let codigo = fila[0] ? String(fila[0]).trim() : `S/C-${i}`;
+                    let nombre = fila[1] ? String(fila[1]).trim() : 'Sin Nombre';
+                    let costo = parseFloat(fila[2]) || 0;
+                    let impuesto = parseFloat(fila[3]) || 0;
+                    let otro = parseFloat(fila[4]) || 0;
+                    let descuento = parseFloat(fila[5]) || 0;
+
+                    if (codigo && nombre) {
+                        let existente = productos.find(p => p.codigo === codigo);
+                        let nuevoP = {
+                            codigo,
+                            nombre,
+                            stock: existente ? existente.stock : 0,
+                            costo,
+                            margen: existente ? existente.margen : 30,
+                            impuesto,
+                            descuento,
+                            otro,
+                            foto: existente ? (existente.foto || null) : null
+                        };
+                        nuevoP.precioVenta = calcularPrecioFinal(nuevoP);
+                        nuevosProductos.push(nuevoP);
+                    }
+                }
+
+                try {
+                    const { db, doc, writeBatch } = window.FB;
+                    for (let i = 0; i < nuevosProductos.length; i += 400) {
+                        const lote = nuevosProductos.slice(i, i + 400);
+                        const batch = writeBatch(db);
+                        lote.forEach(p => batch.set(doc(db, 'ferreteria_productos', p.codigo), p));
+                        await batch.commit();
+                    }
+                    mostrarNotificacion(`📥 ${nuevosProductos.length} productos cargados y sincronizados.`);
+                } catch (err) {
+                    mostrarNotificacion('❌ Error al subir la planilla: ' + err.message);
+                }
+                event.target.value = '';
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function agregarAlCarrito(index) {
+            let p = productos[index];
+            if (p.stock <= 0) {
+                mostrarNotificacion("⚠️ Producto sin stock disponible.");
+                return;
+            }
+
+            let item = carritoVenta.find(i => i.codigo === p.codigo);
+            if (item) {
+                if ((item.cantidad + 1) <= p.stock) {
+                    item.cantidad += 1;
+                } else {
+                    mostrarNotificacion("⚠️ Stock máximo alcanzado.");
+                    return;
+                }
+            } else {
+                carritoVenta.push({ ...p, cantidad: 1 });
+            }
+            actualizarTotalesCarrito();
+            mostrarNotificacion(`🛒 ${p.nombre} agregado`);
+        }
+
+        function actualizarTotalesCarrito() {
+            let total = 0;
+            let unidadesTotales = 0;
+
+            carritoVenta.forEach(i => {
+                total += Math.round(i.precioVenta) * i.cantidad;
+                unidadesTotales += i.cantidad;
+            });
+
+            if (descuentoAplicadoCarrito) {
+                let factorDesc = 1 - (descuentoConfigurado / 100);
+                total = Math.round(total * factorDesc);
+            }
+            
+            document.getElementById('cartCount').textContent = unidadesTotales;
+            document.getElementById('cartTotal').textContent = `$ ${Math.round(total).toLocaleString()}`;
+        }
+
+        function verCarrito() {
+            let modal = document.getElementById('modalOperacion');
+            let titulo = document.getElementById('modalTitulo');
+            let body = document.getElementById('modalBody');
+            
+            titulo.textContent = "🛒 Carrito de Ventas";
+            
+            if (carritoVenta.length === 0) {
+                body.innerHTML = "<p style='text-align:center; padding:20px; color:#64748b;'>El carrito está vacío.</p>";
+            } else {
+                let html = `<table style="width:100%; border-collapse:collapse;">
+                    <tr>
+                        <th style="text-align:left; padding:8px;">Producto</th>
+                        <th style="text-align:center; padding:8px;">Cantidad</th>
+                        <th style="text-align:right; padding:8px;">Precio U.</th>
+                        <th style="text-align:right; padding:8px;">Subtotal</th>
+                        <th style="text-align:center; padding:8px;" class="no-print">Acción</th>
+                    </tr>`;
+                let totalOriginal = 0;
+                carritoVenta.forEach((i, idx) => {
+                    let sub = Math.round(i.precioVenta) * i.cantidad;
+                    totalOriginal += sub;
+                    html += `
+                        <tr style="border-bottom:1px solid #e2e8f0;">
+                            <td style="padding:8px;">${i.nombre}</td>
+                            <td style="padding:8px; text-align:center; white-space:nowrap;">
+                                <button class="btn-qty" onclick="modificarCantidadItem(${idx}, -1)">-</button>
+                                <input type="number" value="${i.cantidad}" step="any" min="0.01" max="${i.stock}" style="width: 55px; text-align:center; margin: 0 4px; padding: 4px;" onchange="cambiarCantidadDirecta(${idx}, this.value)">
+                                <button class="btn-qty" onclick="modificarCantidadItem(${idx}, 1)">+</button>
+                            </td>
+                            <td style="padding:8px; text-align:right;">$ ${Math.round(i.precioVenta).toLocaleString()}</td>
+                            <td style="padding:8px; text-align:right;">$ ${Math.round(sub).toLocaleString()}</td>
+                            <td style="padding:8px; text-align:center;" class="no-print">
+                                <button class="btn-danger" style="padding: 4px 8px; font-size: 11px;" onclick="quitarItemCarrito(${idx})">Quitar</button>
+                            </td>
+                        </tr>`;
+                });
+
+                html += `</table>`;
+                
+                let totalFinal = totalOriginal;
+                if (descuentoAplicadoCarrito) {
+                    let factorDesc = 1 - (descuentoConfigurado / 100);
+                    totalFinal = Math.round(totalOriginal * factorDesc);
+                }
+
+                html += `<div style="text-align:right; margin-top:15px;">`;
+                if (descuentoAplicadoCarrito) {
+                    html += `<p style="margin:0; color:#475569; text-decoration:line-through;">Subtotal: $ ${Math.round(totalOriginal).toLocaleString()}</p>`;
+                    html += `<p style="margin:2px 0; color:var(--success); font-size:13px;">Descuento aplicado (${descuentoConfigurado}%)</p>`;
+                }
+                html += `<h2 style="margin:5px 0; color:var(--success);">Total Carrito: $ ${Math.round(totalFinal).toLocaleString()}</h2>`;
+                html += `</div>`;
+
+                let textoBtnDesc = descuentoAplicadoCarrito ? `❌ Quitar Descuento (${descuentoConfigurado}%)` : `🏷️ Aplicar Descuento (${descuentoConfigurado}%)`;
+
+                html += `
+                    <div style="margin-top:20px; display:flex; gap:10px; justify-content:space-between; align-items:center; flex-wrap:wrap;" class="no-print">
+                        <div style="display:flex; gap:10px;">
+                            <button class="btn-danger" onclick="carritoVenta=[]; descuentoAplicadoCarrito=false; actualizarTotalesCarrito(); verCarrito();">Vaciar</button>
+                            <button class="btn-warning" onclick="toggleDescuentoCarrito()">${textoBtnDesc}</button>
+                        </div>
+                        <div style="display:flex; gap:10px; align-items:center;">
+                            <select id="tipoMetodoPago" style="padding: 10px; font-weight: bold; border-radius:6px; border:1px solid #cbd5e1;">
+                                <option value="Efectivo">💵 Efectivo</option>
+                                <option value="QR">📱 QR (Billetera)</option>
+                            </select>
+                            <button class="btn-success" style="font-size: 15px; padding: 11px 18px;" onclick="concretarVenta()">✅ Concretar Venta</button>
+                        </div>
+                    </div>`;
+                body.innerHTML = html;
+            }
+            modal.style.display = 'flex';
+        }
+
+        function modificarCantidadItem(idx, delta) {
+            let item = carritoVenta[idx];
+            let nuevaCant = item.cantidad + delta;
+            if (nuevaCant > 0 && nuevaCant <= item.stock) {
+                item.cantidad = nuevaCant;
+                actualizarTotalesCarrito();
+                verCarrito();
+            } else if (nuevaCant > item.stock) {
+                mostrarNotificacion(`⚠️ Stock máximo disponible: ${item.stock}`);
+            }
+        }
+
+        function cambiarCantidadDirecta(idx, val) {
+            let num = parseFloat(val);
+            let item = carritoVenta[idx];
+            if (num > 0 && num <= item.stock) {
+                item.cantidad = num;
+                actualizarTotalesCarrito();
+                verCarrito();
+            } else {
+                mostrarNotificacion(`⚠️ Stock máximo disponible: ${item.stock}`);
+                verCarrito();
+            }
+        }
+
+        function toggleDescuentoCarrito() {
+            descuentoAplicadoCarrito = !descuentoAplicadoCarrito;
+            actualizarTotalesCarrito();
+            verCarrito();
+        }
+
+        function quitarItemCarrito(idx) {
+            carritoVenta.splice(idx, 1);
+            if (carritoVenta.length === 0) descuentoAplicadoCarrito = false;
+            actualizarTotalesCarrito();
+            verCarrito();
+        }
+
+        async function concretarVenta() {
+            if (carritoVenta.length === 0) return;
+
+            let metodoPago = document.getElementById('tipoMetodoPago').value;
+            const ahora = new Date();
+            const opcionesFecha = { weekday: 'long', year: 'numeric', month: 'numeric', day: 'numeric' };
+            let fechaActualStr = ahora.toLocaleDateString('es-ES', opcionesFecha);
+            let horaActualStr = ahora.toLocaleTimeString();
+            let fechaISO = fechaISOLocal(ahora); // YYYY-MM-DD en hora local, para filtrar por rango
+
+            const itemsVenta = [...carritoVenta];
+            let totalVenta = 0;
+            itemsVenta.forEach(item => { totalVenta += Math.round(item.precioVenta) * item.cantidad; });
+            if (descuentoAplicadoCarrito) {
+                totalVenta = Math.round(totalVenta * (1 - descuentoConfigurado / 100));
+            }
+            totalVenta = Math.round(totalVenta);
+
+            const btnConcretar = document.getElementById('btnConcretarVenta');
+            if (btnConcretar) btnConcretar.disabled = true;
+
+            try {
+                const { db, doc, collection, runTransaction } = window.FB;
+                const ventaRef = doc(collection(db, 'ferreteria_ventas'));
+
+                const numeroVenta = await runTransaction(db, async (tx) => {
+                    const refsProductos = itemsVenta.map(item => doc(db, 'ferreteria_productos', item.codigo));
+                    const snapsProductos = await Promise.all(refsProductos.map(r => tx.get(r)));
+
+                    const contadorRef = doc(db, 'ferreteria_config', 'contadorVentas');
+                    const contadorSnap = await tx.get(contadorRef);
+                    const siguienteNumero = (contadorSnap.exists() ? (contadorSnap.data().valor || 0) : 0) + 1;
+
+                    snapsProductos.forEach((snap, i) => {
+                        if (snap.exists()) {
+                            let data = snap.data();
+                            let nuevoStock = Math.round(((data.stock || 0) - itemsVenta[i].cantidad) * 100) / 100;
+                            tx.update(refsProductos[i], { stock: nuevoStock });
+                        }
+                    });
+
+                    tx.set(contadorRef, { valor: siguienteNumero });
+                    tx.set(ventaRef, {
+                        id: String(siguienteNumero).padStart(6, '0'),
+                        fechaDia: fechaActualStr,
+                        fechaISO: fechaISO,
+                        hora: horaActualStr,
+                        timestampMs: ahora.getTime(),
+                        items: itemsVenta,
+                        total: totalVenta,
+                        metodo: metodoPago,
+                        vendedor: (window.FB.auth.currentUser && window.FB.auth.currentUser.email) || ''
+                    });
+
+                    return siguienteNumero;
+                });
+
+                mostrarConfirmacionVenta({
+                    id: String(numeroVenta).padStart(6, '0'),
+                    fechaDia: fechaActualStr,
+                    hora: horaActualStr,
+                    items: itemsVenta,
+                    total: totalVenta,
+                    metodo: metodoPago
+                });
+
+                carritoVenta = [];
+                descuentoAplicadoCarrito = false;
+                actualizarTotalesCarrito();
+            } catch (err) {
+                mostrarNotificacion('❌ No se pudo registrar la venta: ' + err.message);
+            } finally {
+                if (btnConcretar) btnConcretar.disabled = false;
+            }
+        }
+
+        function mostrarConfirmacionVenta(venta) {
+            let modal = document.getElementById('modalOperacion');
+            let titulo = document.getElementById('modalTitulo');
+            let body = document.getElementById('modalBody');
+
+            titulo.textContent = "✅ ¡Venta Concretada!";
+            
+            let html = `
+                <div class="remito-container" style="font-family: Tahoma, Geneva, sans-serif; font-size: 14px; border: 2px solid #000; padding: 20px; border-radius: 4px; background: #fff;">
+                    <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 12px;">
+                        <span class="remito-header-title" style="font-size: 22px; font-weight: bold; text-transform: uppercase; display: block;">FERRETERÍA EL TRICOLOR</span>
+                        <span style="font-weight: bold; font-size: 14px;">REMITO DE ENTREGA / COMPROBANTE DE VENTA</span>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 14px;">
+                        <div><strong>REMITO N°:</strong> ${venta.id}</div>
+                        <div><strong>FECHA:</strong> ${venta.fechaDia} ${venta.hora}</div>
+                    </div>
+
+                    <div style="margin-bottom: 12px; font-size: 14px;">
+                        <strong>FORMA DE PAGO:</strong> <span style="text-transform: uppercase;">${venta.metodo}</span>
+                    </div>
+
+                    <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 14px;">
+                        <thead>
+                            <tr style="border-top: 1px solid #000; border-bottom: 1px solid #000; background: #f1f5f9;">
+                                <th style="text-align: left; padding: 6px;">CANT.</th>
+                                <th style="text-align: left; padding: 6px;">DESCRIPCIÓN</th>
+                                <th style="text-align: right; padding: 6px;">P. UNIT</th>
+                                <th style="text-align: right; padding: 6px;">TOTAL</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${venta.items.map(i => `
+                                <tr style="border-bottom: 1px dashed #ccc;">
+                                    <td style="padding: 6px;"><strong>${i.cantidad}</strong></td>
+                                    <td style="padding: 6px;"><strong>${i.nombre}</strong></td>
+                                    <td style="padding: 6px; text-align: right;">$${Math.round(i.precioVenta).toLocaleString()}</td>
+                                    <td style="padding: 6px; text-align: right;"><strong>$${Math.round(i.precioVenta * i.cantidad).toLocaleString()}</strong></td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+
+                    <div style="border-top: 2px solid #000; padding-top: 10px; text-align: right; font-size: 16px;">
+                        <strong>TOTAL A PAGAR: <span style="font-size: 18px;">$${venta.total.toLocaleString()}</span></strong>
+                    </div>
+
+                    <div style="margin-top: 30px; border-top: 1px solid #cbd5e1; padding-top: 10px; text-align: center; font-size: 12px; color: #475569;">
+                        *** Documento no válido como factura - Gracias por su compra ***
+                    </div>
+                </div>
+
+                <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;" class="no-print">
+                    <button class="btn-secondary" onclick="cerrarModal()">Cerrar</button>
+                    <button class="btn-primary" onclick="window.print()">🖨️ Imprimir Remito</button>
+                </div>
+            `;
+
+            body.innerHTML = html;
+            modal.style.display = 'flex';
+        }
+
+        function verReporteFaltantes() {
+            if (!esAdmin) return;
+
+            let modal = document.getElementById('modalOperacion');
+            let titulo = document.getElementById('modalTitulo');
+            let body = document.getElementById('modalBody');
+
+            titulo.textContent = "📋 Reporte de Productos Faltantes (Stock 0)";
+
+            let faltantes = productos.filter(p => p.stock <= 0);
+
+            if (faltantes.length === 0) {
+                body.innerHTML = "<p style='text-align:center; padding:20px; color:var(--success); font-weight:bold;'>🎉 ¡Excelente! No hay productos agotados actualmente.</p>";
+            } else {
+                let html = `<p style="margin-bottom:12px; color:#64748b;">Listado de artículos sin stock para reposición:</p>`;
+                html += `<table style="width:100%; border-collapse:collapse;">
+                    <thead>
+                        <tr style="background:#f1f5f9;">
+                            <th style="padding:8px;">Código</th>
+                            <th style="padding:8px;">Producto</th>
+                            <th style="padding:8px; text-align:right;">Costo Base</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+                faltantes.forEach(p => {
+                    html += `
+                        <tr style="border-bottom:1px solid #e2e8f0;">
+                            <td style="padding:8px;"><strong>${p.codigo}</strong></td>
+                            <td style="padding:8px;">${p.nombre}</td>
+                            <td style="padding:8px; text-align:right;">$ ${p.costo.toLocaleString()}</td>
+                        </tr>`;
+                });
+
+                html += `</tbody></table>`;
+                html += `
+                    <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center;" class="no-print">
+                        <strong>Total Faltantes: <span style="color:red;">${faltantes.length} productos</span></strong>
+                        <button class="btn-primary" onclick="window.print()">🖨️ Imprimir Listado</button>
+                    </div>
+                `;
+                body.innerHTML = html;
+            }
+            modal.style.display = 'flex';
+        }
+
+        function confirmarEliminarSinStock() {
+            if (!esAdmin) return;
+
+            let modal = document.getElementById('modalOperacion');
+            let titulo = document.getElementById('modalTitulo');
+            let body = document.getElementById('modalBody');
+
+            titulo.textContent = "🗑️ Eliminar Productos Sin Stock";
+
+            let sinStock = productos.filter(p => p.stock <= 0);
+
+            if (sinStock.length === 0) {
+                body.innerHTML = "<p style='text-align:center; padding:20px; color:var(--success); font-weight:bold;'>🎉 No hay productos con stock 0 para eliminar.</p>";
+                modal.style.display = 'flex';
+                return;
+            }
+
+            let html = `<p style="margin-bottom:12px; color:#b91c1c; font-weight:600;">⚠️ Se van a eliminar PERMANENTEMENTE estos ${sinStock.length} producto(s):</p>`;
+            html += `<div style="max-height:280px; overflow-y:auto; margin-bottom:14px;">
+                <table style="width:100%; border-collapse:collapse;">
+                    <thead>
+                        <tr style="background:#f1f5f9;">
+                            <th style="padding:8px; text-align:left;">Código</th>
+                            <th style="padding:8px; text-align:left;">Producto</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+            sinStock.forEach(p => {
+                html += `
+                    <tr style="border-bottom:1px solid #e2e8f0;">
+                        <td style="padding:8px;"><strong>${p.codigo}</strong></td>
+                        <td style="padding:8px;">${p.nombre}</td>
+                    </tr>`;
+            });
+
+            html += `</tbody></table></div>`;
+            html += `
+                <p style="font-size:12px; color:#64748b; margin-bottom:14px;">Si te arrepentís después de eliminar, podés deshacerlo con el botón ↩️ Deshacer (Ctrl+Z).</p>
+                <div style="display:flex; justify-content:space-between;">
+                    <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+                    <button class="btn-danger" onclick="ejecutarEliminarSinStock()">🗑️ Eliminar los ${sinStock.length} producto(s)</button>
+                </div>
+            `;
+
+            body.innerHTML = html;
+            modal.style.display = 'flex';
+        }
+
+        async function ejecutarEliminarSinStock() {
+            let sinStock = productos.filter(p => p.stock <= 0);
+            if (sinStock.length === 0) { cerrarModal(); return; }
+            try {
+                const { db, doc, writeBatch } = window.FB;
+                for (let i = 0; i < sinStock.length; i += 400) {
+                    const lote = sinStock.slice(i, i + 400);
+                    const batch = writeBatch(db);
+                    lote.forEach(p => batch.delete(doc(db, 'ferreteria_productos', p.codigo)));
+                    await batch.commit();
+                }
+                cerrarModal();
+                mostrarNotificacion(`🗑️ Se eliminaron ${sinStock.length} producto(s) sin stock.`);
+            } catch (err) {
+                mostrarNotificacion('❌ Error al eliminar: ' + err.message);
+            }
+        }
+
+        function filtroRapidoCierre(tipo) {
+            const hoy = new Date();
+            const hoyISO = fechaISOLocal(hoy);
+
+            if (tipo === 'hoy') {
+                filtroCierreDesde = hoyISO;
+                filtroCierreHasta = hoyISO;
+            } else if (tipo === 'semana') {
+                const diaSemana = hoy.getDay();
+                const offsetLunes = diaSemana === 0 ? 6 : diaSemana - 1;
+                const lunes = new Date(hoy);
+                lunes.setDate(hoy.getDate() - offsetLunes);
+                filtroCierreDesde = fechaISOLocal(lunes);
+                filtroCierreHasta = hoyISO;
+            } else if (tipo === 'mes') {
+                const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+                filtroCierreDesde = fechaISOLocal(primerDia);
+                filtroCierreHasta = hoyISO;
+            }
+            verCierreCajaSemanal();
+        }
+
+        function aplicarFiltroFechasCierre() {
+            filtroCierreDesde = document.getElementById('filtroCierreDesde').value || '';
+            filtroCierreHasta = document.getElementById('filtroCierreHasta').value || '';
+            verCierreCajaSemanal();
+        }
+
+        function limpiarFiltroFechasCierre() {
+            filtroCierreDesde = '';
+            filtroCierreHasta = '';
+            verCierreCajaSemanal();
+        }
+
+        function obtenerFechaISODeVenta(v) {
+            if (v.fechaISO) return v.fechaISO;
+            // Ventas antiguas: intentar extraer la fecha del texto "jueves, 10/9/2026"
+            if (v.fechaDia) {
+                let match = v.fechaDia.match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+                if (match) {
+                    let [, dia, mes, anio] = match;
+                    return `${anio}-${mes.padStart(2, '0')}-${dia.padStart(2, '0')}`;
+                }
+            }
+            return null;
+        }
+
+        function obtenerVentasFiltradas() {
+            if (!filtroCierreDesde && !filtroCierreHasta) {
+                return { ventas: historialVentas, filtroActivo: false, sinFecha: 0 };
+            }
+            let sinFecha = 0;
+            let ventas = historialVentas.filter(v => {
+                let fechaISO = obtenerFechaISODeVenta(v);
+                if (!fechaISO) { sinFecha++; return false; }
+                if (filtroCierreDesde && fechaISO < filtroCierreDesde) return false;
+                if (filtroCierreHasta && fechaISO > filtroCierreHasta) return false;
+                return true;
+            });
+            return { ventas, filtroActivo: true, sinFecha };
+        }
+
+        function verCierreCajaSemanal() {
+            let modal = document.getElementById('modalOperacion');
+            let titulo = document.getElementById('modalTitulo');
+            let body = document.getElementById('modalBody');
+            
+            titulo.textContent = "📊 Cierre de Caja y Detalle de Ventas";
+
+            let barraFiltro = `
+                <div class="no-print" style="background:#eff6ff; padding:12px; border-radius:8px; margin-bottom:12px;">
+                    <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; margin-bottom:8px;">
+                        <div><label style="font-size:11px; font-weight:bold; display:block;">Desde</label><input type="date" id="filtroCierreDesde" value="${filtroCierreDesde}" style="padding:6px;"></div>
+                        <div><label style="font-size:11px; font-weight:bold; display:block;">Hasta</label><input type="date" id="filtroCierreHasta" value="${filtroCierreHasta}" style="padding:6px;"></div>
+                        <button class="btn-primary" style="padding:8px 12px; font-size:13px;" onclick="aplicarFiltroFechasCierre()">🔍 Filtrar</button>
+                        <button class="btn-secondary" style="padding:8px 12px; font-size:13px;" onclick="limpiarFiltroFechasCierre()">Ver Todo</button>
+                    </div>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                        <button class="btn-secondary" style="padding:5px 10px; font-size:12px;" onclick="filtroRapidoCierre('hoy')">Hoy</button>
+                        <button class="btn-secondary" style="padding:5px 10px; font-size:12px;" onclick="filtroRapidoCierre('semana')">Esta Semana</button>
+                        <button class="btn-secondary" style="padding:5px 10px; font-size:12px;" onclick="filtroRapidoCierre('mes')">Este Mes</button>
+                    </div>
+                </div>
+            `;
+
+            if (historialVentas.length === 0) {
+                body.innerHTML = barraFiltro + "<p style='text-align:center; padding:20px; color:#64748b;'>No hay ventas registradas en el ciclo actual.</p>";
+                modal.style.display = 'flex';
+                return;
+            }
+
+            let { ventas, filtroActivo, sinFecha } = obtenerVentasFiltradas();
+
+            if (ventas.length === 0) {
+                body.innerHTML = barraFiltro + `<p style='text-align:center; padding:20px; color:#64748b;'>No hay ventas registradas en el rango de fechas elegido.</p>`;
+                modal.style.display = 'flex';
+                return;
+            }
+
+            let totalEfectivo = 0;
+            let totalQR = 0;
+            let html = barraFiltro;
+
+            if (filtroActivo) {
+                html += `<p style="color:#0369a1; font-size:13px; margin-bottom:8px;">Mostrando <strong>${ventas.length}</strong> venta(s) entre <strong>${filtroCierreDesde || 'el inicio'}</strong> y <strong>${filtroCierreHasta || 'hoy'}</strong>.</p>`;
+                if (sinFecha > 0) {
+                    html += `<p style="color:#b45309; font-size:12px; margin-bottom:8px;">⚠️ Hay ${sinFecha} venta(s) antiguas sin fecha exacta registrada, no incluidas en este filtro (usá "Ver Todo" para verlas).</p>`;
+                }
+            } else {
+                html += `<p style="color:#64748b; font-size:13px; margin-bottom:10px;">Listado de transacciones registradas:</p>`;
+            }
+
+            html += `<div class="scroll-inner-modal" style="max-height: 280px; overflow-y: auto; padding-right:5px;">`;
+
+            ventas.forEach((v) => {
+                let metodo = v.metodo || "Efectivo";
+                if (metodo === "Efectivo") totalEfectivo += v.total;
+                if (metodo === "QR") totalQR += v.total;
+
+                let badgeMetodo = metodo === "Efectivo" ? "💵 Efectivo" : "📱 QR";
+                let itemsStr = v.items.map(i => `${i.nombre} (x${i.cantidad})`).join(', ');
+                
+                html += `
+                    <div style="background:#f8fafc; border:1px solid #e2e8f0; padding:10px 12px; border-radius:6px; margin-bottom:8px;">
+                        <div style="display:flex; justify-content:space-between; font-size:13px;">
+                            <strong>Venta #${v.id} - ${badgeMetodo}</strong>
+                            <span style="color:#64748b;">📅 ${v.fechaDia} (${v.hora})</span>
+                        </div>
+                        <div style="font-size: 12px; color: #475569; margin: 4px 0;">Artículos: ${itemsStr}</div>
+                        <div style="text-align:right; font-size:14px;">
+                            Total: <strong style="color:var(--success);">$ ${v.total.toLocaleString()}</strong>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += `</div>`;
+            let totalGeneral = totalEfectivo + totalQR;
+
+            html += `
+                <div style="background: #e2e8f0; padding: 15px; border-radius: 8px; margin-top: 15px;">
+                    <div style="display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 5px;">
+                        <span>💵 Total Efectivo:</span>
+                        <strong>$ ${totalEfectivo.toLocaleString()}</strong>
+                    </div>
+                    <div style="display: flex; justify-content: space-between; font-size: 14px; margin-bottom: 8px;">
+                        <span>📱 Total QR / Billetera:</span>
+                        <strong>$ ${totalQR.toLocaleString()}</strong>
+                    </div>
+                    <hr style="border:0; border-top:1px solid #cbd5e1; margin: 8px 0;">
+                    <div style="display: flex; justify-content: space-between; font-size: 17px; color: var(--primary); font-weight: bold;">
+                        <span>Total Recaudado:</span>
+                        <span>$ ${totalGeneral.toLocaleString()}</span>
+                    </div>
+                </div>
+            `;
+
+            html += `
+                <div style="margin-top:15px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                    <button class="btn-primary" onclick="verReporteVentas()">🖨️ Generar Reporte de Venta</button>
+            `;
+
+            if (esAdmin) {
+                html += `
+                    <button class="btn-danger" onclick="reiniciarCierreSemanal()">🗑️ Borrar Historial e Iniciar Nuevo Ciclo</button>
+                `;
+            }
+
+            html += `</div>`;
+
+            body.innerHTML = html;
+            modal.style.display = 'flex';
+        }
+
+        function verReporteVentas() {
+            let modal = document.getElementById('modalOperacion');
+            let titulo = document.getElementById('modalTitulo');
+            let body = document.getElementById('modalBody');
+
+            titulo.textContent = "📄 Reporte de Ventas";
+
+            let { ventas, filtroActivo } = obtenerVentasFiltradas();
+
+            let totalEfectivo = 0, totalQR = 0;
+            let conteoProductos = {};
+
+            ventas.forEach(v => {
+                let metodo = v.metodo || "Efectivo";
+                if (metodo === "Efectivo") totalEfectivo += v.total;
+                if (metodo === "QR") totalQR += v.total;
+                v.items.forEach(i => {
+                    if (!conteoProductos[i.codigo]) {
+                        conteoProductos[i.codigo] = { nombre: i.nombre, cantidad: 0, subtotal: 0 };
+                    }
+                    conteoProductos[i.codigo].cantidad += i.cantidad;
+                    conteoProductos[i.codigo].subtotal += Math.round(i.precioVenta) * i.cantidad;
+                });
+            });
+
+            let totalGeneral = totalEfectivo + totalQR;
+            let rankingProductos = Object.values(conteoProductos).sort((a, b) => b.cantidad - a.cantidad);
+
+            let periodoTexto = filtroActivo
+                ? `Del ${filtroCierreDesde || 'inicio'} al ${filtroCierreHasta || 'hoy'}`
+                : `Historial completo (${historialVentas.length} venta(s))`;
+
+            let filasProductos = rankingProductos.map((p, idx) => `
+                <tr style="border-bottom:1px solid #e2e8f0;">
+                    <td style="padding:6px;">${idx + 1}</td>
+                    <td style="padding:6px;">${p.nombre}</td>
+                    <td style="padding:6px; text-align:center;">${p.cantidad}</td>
+                    <td style="padding:6px; text-align:right;">$ ${p.subtotal.toLocaleString()}</td>
+                </tr>
+            `).join('');
+
+            let html = `
+                <div class="remito-container" style="font-family: Tahoma, Geneva, sans-serif; font-size: 14px; border: 2px solid #000; padding: 20px; border-radius: 4px; background: #fff;">
+                    <div style="text-align:center; margin-bottom:14px;">
+                        <span class="remito-header-title" style="font-size: 22px; font-weight: bold; text-transform: uppercase; display: block;">FERRETERÍA EL TRICOLOR</span>
+                        <span style="font-size:14px;">Reporte de Ventas</span>
+                    </div>
+                    <div style="margin-bottom:10px;"><strong>Período:</strong> ${periodoTexto}</div>
+                    <div style="margin-bottom:14px;"><strong>Cantidad de ventas:</strong> ${ventas.length}</div>
+
+                    <div style="background:#f1f5f9; padding:12px; border-radius:6px; margin-bottom:16px;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>💵 Total Efectivo:</span><strong>$ ${totalEfectivo.toLocaleString()}</strong></div>
+                        <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>📱 Total QR / Billetera:</span><strong>$ ${totalQR.toLocaleString()}</strong></div>
+                        <hr style="border:0; border-top:1px solid #cbd5e1; margin:6px 0;">
+                        <div style="display:flex; justify-content:space-between; font-size:16px;"><span>Total General:</span><strong>$ ${totalGeneral.toLocaleString()}</strong></div>
+                    </div>
+
+                    <div style="font-weight:bold; margin-bottom:6px;">Productos vendidos en el período:</div>
+                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                        <thead>
+                            <tr style="background:#f1f5f9; border-bottom:2px solid #cbd5e1;">
+                                <th style="text-align:left; padding:6px;">#</th>
+                                <th style="text-align:left; padding:6px;">Producto</th>
+                                <th style="text-align:center; padding:6px;">Cant.</th>
+                                <th style="text-align:right; padding:6px;">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${filasProductos || '<tr><td colspan="4" style="padding:10px; text-align:center; color:#64748b;">Sin productos en este período.</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+
+                <div class="no-print" style="display:flex; justify-content:space-between; margin-top:15px;">
+                    <button class="btn-secondary" onclick="verCierreCajaSemanal()">⬅️ Volver</button>
+                    <button class="btn-primary" onclick="window.print()">🖨️ Imprimir Reporte</button>
+                </div>
+            `;
+
+            body.innerHTML = html;
+            modal.style.display = 'flex';
+        }
+
+        async function reiniciarCierreSemanal() {
+            if (!esAdmin) return;
+            if (!confirm("¿Estás seguro de que deseas reiniciar la caja? Esto borrará el historial acumulado PARA TODOS LOS DISPOSITIVOS.")) return;
+            try {
+                const { db, doc, collection, getDocs, writeBatch, setDoc } = window.FB;
+                const snap = await getDocs(collection(db, 'ferreteria_ventas'));
+                const docs = snap.docs;
+                for (let i = 0; i < docs.length; i += 400) {
+                    const lote = docs.slice(i, i + 400);
+                    const batch = writeBatch(db);
+                    lote.forEach(d => batch.delete(d.ref));
+                    await batch.commit();
+                }
+                await setDoc(doc(db, 'ferreteria_config', 'contadorVentas'), { valor: 0 });
+                filtroCierreDesde = '';
+                filtroCierreHasta = '';
+                cerrarModal();
+                mostrarNotificacion("Caja reiniciada correctamente en todos los dispositivos.");
+            } catch (err) {
+                mostrarNotificacion('❌ Error al reiniciar: ' + err.message);
+            }
+        }
+
+        function actualizarRanking() {
+            let container = document.getElementById('rankingContainer');
+            if (!container) return;
+
+            let conteoProductos = {};
+            historialVentas.forEach(v => {
+                v.items.forEach(i => {
+                    if (!conteoProductos[i.codigo]) {
+                        conteoProductos[i.codigo] = { nombre: i.nombre, totalCantidad: 0 };
+                    }
+                    conteoProductos[i.codigo].totalCantidad += i.cantidad;
+                });
+            });
+
+            let listaOrdenada = Object.values(conteoProductos).sort((a, b) => b.totalCantidad - a.totalCantidad);
+
+            if (listaOrdenada.length === 0) {
+                container.innerHTML = "<p style='color: #64748b; font-size: 13px;'>Aún no hay ventas registradas.</p>";
+                return;
+            }
+
+            let html = `<table style="width:100%; font-size: 13px; border-collapse:collapse;">
+                <tr style="border-bottom:1px solid #cbd5e1;">
+                    <th style="text-align:left; padding:4px;">Pos.</th>
+                    <th style="text-align:left; padding:4px;">Producto</th>
+                    <th style="text-align:right; padding:4px;">Vendidos</th>
+                </tr>`;
+            
+            listaOrdenada.slice(0, 10).forEach((item, idx) => {
+                html += `<tr style="border-bottom:1px solid #f1f5f9;">
+                    <td style="padding:4px;"><strong>#${idx + 1}</strong></td>
+                    <td style="padding:4px;">${item.nombre}</td>
+                    <td style="padding:4px; text-align:right;">${item.totalCantidad} un.</td>
+                </tr>`;
+            });
+            html += `</table>`;
+            container.innerHTML = html;
+        }
+
+        function cerrarModal() {
+            document.getElementById('modalOperacion').style.display = 'none';
+        }
+
+        function toggleModoAdmin() {
+            if (!esAdmin) {
+                let pass = prompt("Ingresa la contraseña de Administrador:");
+                if (pass === "37657580") {
+                    esAdmin = true;
+                    mostrarNotificacion("🔓 Modo Administrador activado.");
+                } else if (pass !== null) {
+                    mostrarNotificacion("❌ Contraseña incorrecta.");
+                }
+            } else {
+                esAdmin = false;
+                mostrarNotificacion("🔒 Modo Administrador desactivado.");
+            }
+            guardarYRenderizar(false, true);
+        }
+
+        function abrirModalNuevoProducto() {
+            let modal = document.getElementById('modalOperacion');
+            let titulo = document.getElementById('modalTitulo');
+            let body = document.getElementById('modalBody');
+            
+            titulo.textContent = "➕ Cargar Nuevo Producto";
+            fotoNuevaBase64 = null;
+            body.innerHTML = `
+                <div style="text-align:center; margin-bottom:14px;">
+                    <label style="display:block; margin-bottom:6px; font-weight:600; font-size:13px;">Foto del producto (opcional):</label>
+                    <img id="previewNewFoto" style="display:none; max-width:120px; max-height:120px; border-radius:8px; border:1px solid var(--border); margin-bottom:8px; object-fit:cover;">
+                    <input type="file" accept="image/*" onchange="manejarFotoNueva(this)">
+                </div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                    <div><label>Código:</label><input type="text" id="newCodigo" style="width:100%; padding:8px;"></div>
+                    <div><label>Nombre:</label><input type="text" id="newNombre" style="width:100%; padding:8px;"></div>
+                    <div><label>Stock inicial:</label><input type="number" id="newStock" style="width:100%; padding:8px;" value="0"></div>
+                    <div><label>Costo base ($):</label><input type="number" id="newCosto" style="width:100%; padding:8px;" value="0"></div>
+                    <div><label>Margen Ganancia (%):</label><input type="number" id="newMargen" style="width:100%; padding:8px;" value="30"></div>
+                    <div><label>Impuesto IVA (%):</label><input type="number" id="newImpuesto" style="width:100%; padding:8px;" value="0"></div>
+                    <div><label>Otros Impuestos (%):</label><input type="number" id="newOtro" style="width:100%; padding:8px;" value="0"></div>
+                    <div><label>Descuento Prov. (%):</label><input type="number" id="newDescuento" style="width:100%; padding:8px;" value="0"></div>
+                </div>
+                <div style="margin-top:20px; text-align:right;">
+                    <button class="btn-success" onclick="guardarNuevoProducto()">Guardar Producto</button>
+                </div>
+            `;
+            modal.style.display = 'flex';
+        }
+
+        async function guardarNuevoProducto() {
+            let codigo = document.getElementById('newCodigo').value.trim();
+            let nombre = document.getElementById('newNombre').value.trim();
+            
+            if (!codigo || !nombre) {
+                mostrarNotificacion("⚠️ Código y Nombre son obligatorios.");
+                return;
+            }
+
+            let yaExiste = productos.some(p => p.codigo.toLowerCase() === codigo.toLowerCase());
+            if (yaExiste) {
+                mostrarNotificacion(`⚠️ Ya existe un producto con el código "${codigo}". Usa otro código o editá el producto existente.`);
+                return;
+            }
+
+            let nuevoP = {
+                codigo,
+                nombre,
+                stock: parseFloat(document.getElementById('newStock').value) || 0,
+                costo: parseFloat(document.getElementById('newCosto').value) || 0,
+                margen: parseFloat(document.getElementById('newMargen').value) || 0,
+                impuesto: parseFloat(document.getElementById('newImpuesto').value) || 0,
+                otro: parseFloat(document.getElementById('newOtro').value) || 0,
+                descuento: parseFloat(document.getElementById('newDescuento').value) || 0,
+                foto: fotoNuevaBase64 || null
+            };
+            nuevoP.precioVenta = calcularPrecioFinal(nuevoP);
+
+            try {
+                const { db, doc, setDoc } = window.FB;
+                await setDoc(doc(db, 'ferreteria_productos', codigo), nuevoP);
+                cerrarModal();
+                mostrarNotificacion(`✅ Producto ${nombre} guardado.`);
+            } catch (err) {
+                mostrarNotificacion('❌ No se pudo guardar: ' + err.message);
+            }
+        }
+
+        function editarProducto(index) {
+            let p = productos[index];
+            let modal = document.getElementById('modalOperacion');
+            let titulo = document.getElementById('modalTitulo');
+            let body = document.getElementById('modalBody');
+            
+            titulo.textContent = `✏️ Editar: ${p.nombre}`;
+            fotoEditBase64 = p.foto || null;
+            body.innerHTML = `
+                <div style="text-align:center; margin-bottom:14px;">
+                    <label style="display:block; margin-bottom:6px; font-weight:600; font-size:13px;">Foto del producto:</label>
+                    <img id="previewEditFoto" src="${p.foto || ''}" style="${p.foto ? '' : 'display:none;'} max-width:120px; max-height:120px; border-radius:8px; border:1px solid var(--border); margin-bottom:8px; object-fit:cover;">
+                    <br>
+                    <input type="file" accept="image/*" onchange="manejarFotoEdit(this)">
+                    <button id="btnQuitarFotoEdit" class="btn-secondary" style="${p.foto ? '' : 'display:none;'} margin-left:8px; font-size:12px; padding:6px 10px;" onclick="quitarFotoEdit()">🗑️ Quitar foto</button>
+                </div>
+                <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
+                    <div><label>Código:</label><input type="text" id="editCodigo" value="${p.codigo}" style="width:100%; padding:8px;"></div>
+                    <div><label>Nombre:</label><input type="text" id="editNombre" value="${p.nombre}" style="width:100%; padding:8px;"></div>
+                    <div><label>Stock:</label><input type="number" id="editStock" value="${p.stock}" style="width:100%; padding:8px;"></div>
+                    <div><label>Costo base ($):</label><input type="number" id="editCosto" value="${p.costo}" style="width:100%; padding:8px;"></div>
+                    <div><label>Margen Ganancia (%):</label><input type="number" id="editMargen" value="${p.margen}" style="width:100%; padding:8px;"></div>
+                    <div><label>Impuesto IVA (%):</label><input type="number" id="editImpuesto" value="${p.impuesto}" style="width:100%; padding:8px;"></div>
+                    <div><label>Otros Impuestos (%):</label><input type="number" id="editOtro" value="${p.otro}" style="width:100%; padding:8px;"></div>
+                    <div><label>Descuento Prov. (%):</label><input type="number" id="editDescuento" value="${p.descuento}" style="width:100%; padding:8px;"></div>
+                </div>
+                <div style="margin-top:20px; text-align:right;">
+                    <button class="btn-success" onclick="guardarEdicionProducto(${index})">Actualizar Producto</button>
+                </div>
+            `;
+            modal.style.display = 'flex';
+        }
+
+        async function guardarEdicionProducto(index) {
+            let nuevoCodigo = document.getElementById('editCodigo').value.trim();
+            let yaExiste = productos.some((p, i) => i !== index && p.codigo.toLowerCase() === nuevoCodigo.toLowerCase());
+            if (yaExiste) {
+                mostrarNotificacion(`⚠️ Ya existe otro producto con el código "${nuevoCodigo}". Elegí un código distinto.`);
+                return;
+            }
+
+            let codigoViejo = productos[index].codigo;
+            let p = { ...productos[index] };
+            p.codigo = nuevoCodigo;
+            p.nombre = document.getElementById('editNombre').value.trim();
+            p.stock = parseFloat(document.getElementById('editStock').value) || 0;
+            p.costo = parseFloat(document.getElementById('editCosto').value) || 0;
+            p.margen = parseFloat(document.getElementById('editMargen').value) || 0;
+            p.impuesto = parseFloat(document.getElementById('editImpuesto').value) || 0;
+            p.otro = parseFloat(document.getElementById('editOtro').value) || 0;
+            p.descuento = parseFloat(document.getElementById('editDescuento').value) || 0;
+            p.foto = fotoEditBase64 || null;
+            p.precioVenta = calcularPrecioFinal(p);
+
+            try {
+                const { db, doc, setDoc, writeBatch } = window.FB;
+                if (nuevoCodigo !== codigoViejo) {
+                    const batch = writeBatch(db);
+                    batch.delete(doc(db, 'ferreteria_productos', codigoViejo));
+                    batch.set(doc(db, 'ferreteria_productos', nuevoCodigo), p);
+                    await batch.commit();
+                } else {
+                    await setDoc(doc(db, 'ferreteria_productos', codigoViejo), p);
+                }
+                cerrarModal();
+                mostrarNotificacion("✅ Producto actualizado.");
+            } catch (err) {
+                mostrarNotificacion('❌ No se pudo actualizar: ' + err.message);
+            }
+        }
+
+        async function eliminarProducto(index) {
+            let p = productos[index];
+            if (!confirm(`¿Seguro que deseas eliminar ${p.nombre}?`)) return;
+            try {
+                const { db, doc, deleteDoc } = window.FB;
+                await deleteDoc(doc(db, 'ferreteria_productos', p.codigo));
+                mostrarNotificacion("🗑️ Producto eliminado.");
+            } catch (err) {
+                mostrarNotificacion('❌ No se pudo eliminar: ' + err.message);
+            }
+        }
+
+        async function aplicarAumentoGeneral() {
+            const porcentaje = prompt("Ingresa el porcentaje de aumento global para el COSTO BASE (ej: 15 para +15%):");
+            if (!porcentaje || isNaN(porcentaje)) return;
+            const factor = 1 + (parseFloat(porcentaje) / 100);
+            try {
+                const { db, doc, writeBatch } = window.FB;
+                for (let i = 0; i < productos.length; i += 400) {
+                    const lote = productos.slice(i, i + 400);
+                    const batch = writeBatch(db);
+                    lote.forEach(original => {
+                        let p = { ...original };
+                        p.costo = Math.round(p.costo * factor);
+                        p.precioVenta = calcularPrecioFinal(p);
+                        batch.set(doc(db, 'ferreteria_productos', p.codigo), p);
+                    });
+                    await batch.commit();
+                }
+                mostrarNotificacion(`📈 Aumento del ${porcentaje}% aplicado.`);
+            } catch (err) {
+                mostrarNotificacion('❌ Error al aplicar el aumento: ' + err.message);
+            }
+        }
+
+        function exportarDatos() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(productos));
+            const downloadAnchor = document.createElement('a');
+            downloadAnchor.setAttribute("href", dataStr);
+            downloadAnchor.setAttribute("download", `respaldo_eltricolor_${new Date().toISOString().slice(0,10)}.json`);
+            document.body.appendChild(downloadAnchor);
+            downloadAnchor.click();
+            downloadAnchor.remove();
+        }
+
+        function importarDatosRespaldo(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                try {
+                    const contenido = JSON.parse(e.target.result);
+                    if (!Array.isArray(contenido)) {
+                        mostrarNotificacion("❌ Formato de archivo no válido.");
+                        return;
+                    }
+                    if (!confirm(`Se van a subir ${contenido.length} producto(s) del respaldo a la nube. Los productos con el mismo código se van a actualizar con los datos del respaldo. ¿Continuar?`)) return;
+
+                    const { db, doc, writeBatch } = window.FB;
+                    let subidos = 0;
+                    for (let i = 0; i < contenido.length; i += 400) {
+                        const lote = contenido.slice(i, i + 400);
+                        const batch = writeBatch(db);
+                        lote.forEach(p => {
+                            if (!p || !p.codigo) return;
+                            p.precioVenta = calcularPrecioFinal(p);
+                            batch.set(doc(db, 'ferreteria_productos', String(p.codigo)), p);
+                            subidos++;
+                        });
+                        await batch.commit();
+                    }
+                    mostrarNotificacion(`📤 Respaldo cargado: ${subidos} producto(s) subidos a la nube.`);
+                } catch (error) {
+                    mostrarNotificacion("❌ Error al leer o subir el archivo JSON: " + error.message);
+                }
+            };
+            reader.readAsText(file);
+            event.target.value = '';
+        }
+    </script>
+
+    <!-- ===== CONEXIÓN CON FIREBASE ===== -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+        import {
+            getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut,
+            setPersistence, browserLocalPersistence
+        } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+        import {
+            initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
+            collection, doc, setDoc, updateDoc, deleteDoc, getDocs, onSnapshot,
+            writeBatch, runTransaction, serverTimestamp
+        } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyCj_REcv4DD829iE4UiseOZnNFwgnHmlyM",
+            authDomain: "ferreteria-el-tricolor.firebaseapp.com",
+            projectId: "ferreteria-el-tricolor",
+            storageBucket: "ferreteria-el-tricolor.firebasestorage.app",
+            messagingSenderId: "494503742085",
+            appId: "1:494503742085:web:85945403e86b1ee3fbf7ec"
+        };
+
+        try {
+            const app = initializeApp(firebaseConfig);
+            const auth = getAuth(app);
+
+            let db;
+            try {
+                db = initializeFirestore(app, {
+                    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+                });
+            } catch (e) {
+                // Si falla la caché persistente (navegador no compatible), seguimos sin ella
+                db = initializeFirestore(app, {});
+            }
+
+            window.FB = {
+                app, auth, db,
+                collection, doc, setDoc, updateDoc, deleteDoc, getDocs, onSnapshot,
+                writeBatch, runTransaction, serverTimestamp,
+                signInWithEmailAndPassword, signOut
+            };
+
+            setPersistence(auth, browserLocalPersistence).finally(() => {
+                onAuthStateChanged(auth, (user) => {
+                    if (typeof window.onFirebaseAuthReady === 'function') {
+                        window.onFirebaseAuthReady(user);
+                    }
+                });
+            });
+        } catch (e) {
+            if (typeof window.onFirebaseAuthError === 'function') {
+                window.onFirebaseAuthError('No se pudo conectar con el servidor. Revisá tu conexión a internet.');
+            }
+        }
+
+        // Registro del Service Worker (PWA)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js').catch(() => {});
+            });
+        }
+    </script>
+</body>
+</html>
