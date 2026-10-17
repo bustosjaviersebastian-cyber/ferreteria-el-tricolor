@@ -399,6 +399,7 @@
             <h1 class="cartel-titulo">🛠️ FERRETERIA EL TRICOLOR</h1>
             <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                 <span id="usuarioActualLabel" style="font-size:12px; color:#64748b;"></span>
+                <button id="btnDeshacer" class="btn-warning" onclick="deshacerUltimaAccion()" disabled title="Deshace solo tu último cambio en un producto">↶ Deshacer último cambio</button>
                 <div id="adminBadge" style="display:none; background: #fef3c7; color: #92400e; padding: 6px 14px; border-radius: 20px; font-weight: bold; font-size: 12px; border: 1px solid #fde68a;">
                     🔓 MODO ADMINISTRADOR ACTIVADO
                 </div>
@@ -416,6 +417,7 @@
                         <th>Foto</th>
                         <th>Código</th>
                         <th>Producto</th>
+                        <th>Proveedor</th>
                         <th>Stock</th>
                         <th class="admin-only">Costo</th>
                         <th>Precio Venta</th>
@@ -432,6 +434,11 @@
                     <button class="btn-secondary" onclick="paginaAnterior()">◀ Anterior</button>
                     <span id="numPagina" style="margin: 0 10px; font-weight: bold;">1</span>
                     <button class="btn-secondary" onclick="paginaSiguiente()">Siguiente ▶</button>
+                </div>
+                <div style="display:flex; align-items:center; gap:6px;">
+                    <label for="inputIrAPagina" style="font-size:13px;">Ir a página:</label>
+                    <input type="number" id="inputIrAPagina" min="1" style="width:70px; padding:6px;" onkeydown="if(event.key==='Enter') irAPagina();">
+                    <button class="btn-secondary" onclick="irAPagina()">Ir</button>
                 </div>
             </div>
         </main>
@@ -465,12 +472,15 @@
                 <h4 style="margin-bottom: 10px; color: #64748b;">Herramientas Admin</h4>
                 <button class="btn-primary" style="width:100%; margin-bottom: 8px;" onclick="abrirModalNuevoProducto()">➕ Nuevo Producto</button>
                 <button class="btn-danger" style="width:100%; margin-bottom: 8px;" onclick="verReporteFaltantes()">⚠️ Reporte Faltantes (Stock 0)</button>
-                <button class="btn-danger" style="width:100%; margin-bottom: 8px;" onclick="confirmarEliminarSinStock()">🗑️ Eliminar Productos Sin Stock</button>
                 <button class="btn-warning" style="width:100%; margin-bottom: 8px;" onclick="aplicarAumentoGeneral()">📈 Aumento Global %</button>
                 
                 <!-- Botón 1: Actualización de Precios Rápida -->
                 <button class="btn-secondary" style="width:100%; margin-bottom: 8px; background: #3b82f6;" onclick="document.getElementById('inputExcelPrecios').click()">🔄 Actualizar Precios (2 Col.)</button>
                 <input type="file" id="inputExcelPrecios" accept=".xlsx, .xls, .csv" style="display:none" onchange="importarExcelSoloPrecios(event)">
+
+                <!-- Botón 1b: Actualización de Proveedores -->
+                <button class="btn-secondary" style="width:100%; margin-bottom: 8px; background: #8b5cf6;" onclick="document.getElementById('inputExcelProveedores').click()">🏭 Actualizar Proveedores (2 Col.)</button>
+                <input type="file" id="inputExcelProveedores" accept=".xlsx, .xls, .csv" style="display:none" onchange="importarExcelProveedores(event)">
 
                 <!-- Botón 2: Importación Lista Nueva Completa -->
                 <button class="btn-secondary" style="width:100%; margin-bottom: 8px;" onclick="document.getElementById('inputExcelCompleto').click()">📥 Cargar Lista Nueva (6 Col.)</button>
@@ -514,6 +524,61 @@
 
         let unsubProductos = null;
         let unsubVentas = null;
+
+        // Firestore no permite "/" en el ID de un documento (lo interpreta como separador de ruta).
+        // Esto solo afecta el identificador interno: el código que ves en pantalla no cambia.
+        function codigoADocId(codigo) {
+            return String(codigo).trim().replace(/\//g, '-');
+        }
+
+        // ===== DESHACER (solo la última acción propia, no afecta cambios de otros usuarios) =====
+        let ultimaAccion = null;
+
+        function registrarUltimaAccion(accion) {
+            ultimaAccion = accion;
+            actualizarBotonDeshacer();
+        }
+
+        function actualizarBotonDeshacer() {
+            const btn = document.getElementById('btnDeshacer');
+            if (btn) btn.disabled = !ultimaAccion;
+        }
+
+        async function deshacerUltimaAccion() {
+            if (!ultimaAccion) return;
+            const accion = ultimaAccion;
+            try {
+                const { db, doc, setDoc, deleteDoc } = window.FB;
+                if (accion.tipo === 'crear') {
+                    await deleteDoc(doc(db, 'ferreteria_productos', accion.docIdNuevo));
+                } else if (accion.tipo === 'editar') {
+                    if (accion.docIdNuevo !== accion.docIdAntes) {
+                        await deleteDoc(doc(db, 'ferreteria_productos', accion.docIdNuevo));
+                    }
+                    await setDoc(doc(db, 'ferreteria_productos', accion.docIdAntes), accion.datosAntes);
+                } else if (accion.tipo === 'eliminar' || accion.tipo === 'stock') {
+                    await setDoc(doc(db, 'ferreteria_productos', accion.docIdAntes), accion.datosAntes);
+                }
+                mostrarNotificacion('↶ Último cambio deshecho.');
+            } catch (err) {
+                mostrarNotificacion('❌ No se pudo deshacer: ' + err.message);
+            } finally {
+                ultimaAccion = null;
+                actualizarBotonDeshacer();
+            }
+        }
+
+        // Agrupa por Proveedor (alfabético, sin proveedor al final) y dentro de cada proveedor, alfabético por Nombre
+        function compararProductos(a, b) {
+            let provA = (a.proveedor || '').trim();
+            let provB = (b.proveedor || '').trim();
+            if (!provA && provB) return 1;
+            if (provA && !provB) return -1;
+            if (provA !== provB) {
+                return provA.localeCompare(provB, 'es', { sensitivity: 'base' });
+            }
+            return a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' });
+        }
 
         function fechaISOLocal(d) {
             // Usa el día/mes/año LOCAL (no UTC) para evitar que ventas de la tarde/noche
@@ -600,7 +665,7 @@
         }
 
         function guardarYRenderizar(guardarHistorial = true, mantenerPagina = true) {
-            productos.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+            productos.sort(compararProductos);
 
             let container = document.getElementById('appContainer');
             let badge = document.getElementById('adminBadge');
@@ -699,7 +764,7 @@
                 p.codigo.toLowerCase().includes(busqueda) || 
                 p.nombre.toLowerCase().includes(busqueda)
             );
-            productosFiltrados.sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+            productosFiltrados.sort(compararProductos);
             
             if (!mantenerPagina) {
                 paginaActual = 1;
@@ -747,6 +812,7 @@
                     <td>${fotoHTML}</td>
                     <td>${p.codigo}</td>
                     <td>${p.nombre}</td>
+                    <td>${p.proveedor || '<span style="color:#cbd5e1;">—</span>'}</td>
                     <td>${stockHTML}</td>
                     <td class="admin-only">$ ${p.costo.toLocaleString()}</td>
                     <td><strong>$ ${p.precioVenta.toLocaleString()}</strong></td>
@@ -771,7 +837,10 @@
             nuevoStock = Math.round(nuevoStock * 100) / 100;
             try {
                 const { db, doc, updateDoc } = window.FB;
-                await updateDoc(doc(db, 'ferreteria_productos', p.codigo), { stock: nuevoStock });
+                const docIdAntes = codigoADocId(p.codigo);
+                const datosAntes = { ...p };
+                await updateDoc(doc(db, 'ferreteria_productos', docIdAntes), { stock: nuevoStock });
+                registrarUltimaAccion({ tipo: 'stock', docIdAntes, datosAntes });
             } catch (err) {
                 mostrarNotificacion('❌ No se pudo actualizar el stock: ' + err.message);
             }
@@ -790,6 +859,18 @@
                 paginaActual++;
                 renderizarTablaPaginada();
             }
+        }
+
+        function irAPagina() {
+            let totalPaginas = Math.ceil(productosFiltrados.length / itemsPorPagina) || 1;
+            let input = document.getElementById('inputIrAPagina');
+            let destino = parseInt(input.value);
+            if (isNaN(destino)) return;
+            if (destino < 1) destino = 1;
+            if (destino > totalPaginas) destino = totalPaginas;
+            paginaActual = destino;
+            renderizarTablaPaginada();
+            input.value = '';
         }
 
         /* 1. IMPORTAR SOLO PRECIOS (2 COLUMNAS: CÓDIGO Y COSTO BASE) */
@@ -838,7 +919,7 @@
                     for (let i = 0; i < actualizaciones.length; i += 400) {
                         const lote = actualizaciones.slice(i, i + 400);
                         const batch = writeBatch(db);
-                        lote.forEach(p => batch.set(doc(db, 'ferreteria_productos', p.codigo), p));
+                        lote.forEach(p => batch.set(doc(db, 'ferreteria_productos', codigoADocId(p.codigo)), p));
                         await batch.commit();
                     }
                     mostrarNotificacion(`🔄 ${actualizaciones.length} precios actualizados. (${noEncontrados} no encontrados)`);
@@ -846,6 +927,90 @@
                     mostrarNotificacion('❌ Error al subir los precios: ' + err.message);
                 }
                 event.target.value = '';
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        /* 1b. ACTUALIZAR PROVEEDORES (2 COLUMNAS: CÓDIGO Y PROVEEDOR) */
+        async function importarExcelProveedores(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = async function(e) {
+                let wakeLock = null;
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const sheetName = workbook.SheetNames[0];
+                    const sheet = workbook.Sheets[sheetName];
+                    const datosBrutos = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+                    if (datosBrutos.length <= 1) {
+                        mostrarNotificacion("⚠️ La planilla seleccionada está vacía.");
+                        return;
+                    }
+
+                    let actualizaciones = [];
+                    let noEncontrados = 0;
+
+                    for (let i = 1; i < datosBrutos.length; i++) {
+                        const fila = datosBrutos[i];
+                        if (!fila || fila.length === 0) continue;
+
+                        let codigo = fila[0] ? String(fila[0]).trim() : '';
+                        let proveedor = fila[1] ? String(fila[1]).trim() : '';
+
+                        if (codigo) {
+                            let existente = productos.find(p => p.codigo === codigo);
+                            if (existente) {
+                                actualizaciones.push({ ...existente, proveedor: proveedor || null });
+                            } else {
+                                noEncontrados++;
+                            }
+                        }
+                    }
+
+                    if (!confirm(`Se van a actualizar ${actualizaciones.length} producto(s) con su proveedor. No bloquees ni cierres el celular hasta que termine. ¿Continuar?`)) return;
+
+                    try {
+                        if ('wakeLock' in navigator) {
+                            wakeLock = await navigator.wakeLock.request('screen');
+                        }
+                    } catch (errWakeLock) { /* seguimos igual si no se puede */ }
+
+                    const { db, doc, writeBatch } = window.FB;
+                    const TAMANO_LOTE = 200;
+                    const totalLotes = Math.ceil(actualizaciones.length / TAMANO_LOTE) || 0;
+                    let subidos = 0;
+                    let lotesConError = 0;
+
+                    for (let i = 0; i < actualizaciones.length; i += TAMANO_LOTE) {
+                        const numeroLote = Math.floor(i / TAMANO_LOTE) + 1;
+                        const lote = actualizaciones.slice(i, i + TAMANO_LOTE);
+                        try {
+                            const batch = writeBatch(db);
+                            lote.forEach(p => batch.set(doc(db, 'ferreteria_productos', codigoADocId(p.codigo)), p));
+                            await batch.commit();
+                            subidos += lote.length;
+                            mostrarNotificacion(`⏳ Lote ${numeroLote} de ${totalLotes} subido (${subidos}/${actualizaciones.length})`);
+                        } catch (errLote) {
+                            lotesConError++;
+                            mostrarNotificacion(`⚠️ Falló el lote ${numeroLote} de ${totalLotes}: ${errLote.message}`);
+                        }
+                    }
+
+                    if (lotesConError === 0) {
+                        mostrarNotificacion(`🏭 ${subidos} proveedor(es) actualizados. (${noEncontrados} código(s) no encontrados)`);
+                    } else {
+                        mostrarNotificacion(`⚠️ Se actualizaron ${subidos} de ${actualizaciones.length}. ${lotesConError} lote(s) fallaron: volvé a importar el mismo archivo para completar lo que falta.`);
+                    }
+                } catch (err) {
+                    mostrarNotificacion('❌ Error al leer o subir la planilla: ' + err.message);
+                } finally {
+                    if (wakeLock) { try { await wakeLock.release(); } catch (errRelease) {} }
+                    event.target.value = '';
+                }
             };
             reader.readAsArrayBuffer(file);
         }
@@ -887,6 +1052,7 @@
                         let nuevoP = {
                             codigo,
                             nombre,
+                            proveedor: existente ? (existente.proveedor || null) : null,
                             stock: existente ? existente.stock : 0,
                             costo,
                             margen: existente ? existente.margen : 30,
@@ -905,7 +1071,7 @@
                     for (let i = 0; i < nuevosProductos.length; i += 400) {
                         const lote = nuevosProductos.slice(i, i + 400);
                         const batch = writeBatch(db);
-                        lote.forEach(p => batch.set(doc(db, 'ferreteria_productos', p.codigo), p));
+                        lote.forEach(p => batch.set(doc(db, 'ferreteria_productos', codigoADocId(p.codigo)), p));
                         await batch.commit();
                     }
                     mostrarNotificacion(`📥 ${nuevosProductos.length} productos cargados y sincronizados.`);
@@ -1096,7 +1262,7 @@
                 const ventaRef = doc(collection(db, 'ferreteria_ventas'));
 
                 const numeroVenta = await runTransaction(db, async (tx) => {
-                    const refsProductos = itemsVenta.map(item => doc(db, 'ferreteria_productos', item.codigo));
+                    const refsProductos = itemsVenta.map(item => doc(db, 'ferreteria_productos', codigoADocId(item.codigo)));
                     const snapsProductos = await Promise.all(refsProductos.map(r => tx.get(r)));
 
                     const contadorRef = doc(db, 'ferreteria_config', 'contadorVentas');
@@ -1253,73 +1419,6 @@
                 body.innerHTML = html;
             }
             modal.style.display = 'flex';
-        }
-
-        function confirmarEliminarSinStock() {
-            if (!esAdmin) return;
-
-            let modal = document.getElementById('modalOperacion');
-            let titulo = document.getElementById('modalTitulo');
-            let body = document.getElementById('modalBody');
-
-            titulo.textContent = "🗑️ Eliminar Productos Sin Stock";
-
-            let sinStock = productos.filter(p => p.stock <= 0);
-
-            if (sinStock.length === 0) {
-                body.innerHTML = "<p style='text-align:center; padding:20px; color:var(--success); font-weight:bold;'>🎉 No hay productos con stock 0 para eliminar.</p>";
-                modal.style.display = 'flex';
-                return;
-            }
-
-            let html = `<p style="margin-bottom:12px; color:#b91c1c; font-weight:600;">⚠️ Se van a eliminar PERMANENTEMENTE estos ${sinStock.length} producto(s):</p>`;
-            html += `<div style="max-height:280px; overflow-y:auto; margin-bottom:14px;">
-                <table style="width:100%; border-collapse:collapse;">
-                    <thead>
-                        <tr style="background:#f1f5f9;">
-                            <th style="padding:8px; text-align:left;">Código</th>
-                            <th style="padding:8px; text-align:left;">Producto</th>
-                        </tr>
-                    </thead>
-                    <tbody>`;
-
-            sinStock.forEach(p => {
-                html += `
-                    <tr style="border-bottom:1px solid #e2e8f0;">
-                        <td style="padding:8px;"><strong>${p.codigo}</strong></td>
-                        <td style="padding:8px;">${p.nombre}</td>
-                    </tr>`;
-            });
-
-            html += `</tbody></table></div>`;
-            html += `
-                <p style="font-size:12px; color:#64748b; margin-bottom:14px;">Si te arrepentís después de eliminar, podés deshacerlo con el botón ↩️ Deshacer (Ctrl+Z).</p>
-                <div style="display:flex; justify-content:space-between;">
-                    <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
-                    <button class="btn-danger" onclick="ejecutarEliminarSinStock()">🗑️ Eliminar los ${sinStock.length} producto(s)</button>
-                </div>
-            `;
-
-            body.innerHTML = html;
-            modal.style.display = 'flex';
-        }
-
-        async function ejecutarEliminarSinStock() {
-            let sinStock = productos.filter(p => p.stock <= 0);
-            if (sinStock.length === 0) { cerrarModal(); return; }
-            try {
-                const { db, doc, writeBatch } = window.FB;
-                for (let i = 0; i < sinStock.length; i += 400) {
-                    const lote = sinStock.slice(i, i + 400);
-                    const batch = writeBatch(db);
-                    lote.forEach(p => batch.delete(doc(db, 'ferreteria_productos', p.codigo)));
-                    await batch.commit();
-                }
-                cerrarModal();
-                mostrarNotificacion(`🗑️ Se eliminaron ${sinStock.length} producto(s) sin stock.`);
-            } catch (err) {
-                mostrarNotificacion('❌ Error al eliminar: ' + err.message);
-            }
         }
 
         function filtroRapidoCierre(tipo) {
@@ -1677,6 +1776,7 @@
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
                     <div><label>Código:</label><input type="text" id="newCodigo" style="width:100%; padding:8px;"></div>
                     <div><label>Nombre:</label><input type="text" id="newNombre" style="width:100%; padding:8px;"></div>
+                    <div><label>Proveedor:</label><input type="text" id="newProveedor" style="width:100%; padding:8px;" placeholder="(opcional)"></div>
                     <div><label>Stock inicial:</label><input type="number" id="newStock" style="width:100%; padding:8px;" value="0"></div>
                     <div><label>Costo base ($):</label><input type="number" id="newCosto" style="width:100%; padding:8px;" value="0"></div>
                     <div><label>Margen Ganancia (%):</label><input type="number" id="newMargen" style="width:100%; padding:8px;" value="30"></div>
@@ -1709,6 +1809,7 @@
             let nuevoP = {
                 codigo,
                 nombre,
+                proveedor: document.getElementById('newProveedor').value.trim() || null,
                 stock: parseFloat(document.getElementById('newStock').value) || 0,
                 costo: parseFloat(document.getElementById('newCosto').value) || 0,
                 margen: parseFloat(document.getElementById('newMargen').value) || 0,
@@ -1721,7 +1822,9 @@
 
             try {
                 const { db, doc, setDoc } = window.FB;
-                await setDoc(doc(db, 'ferreteria_productos', codigo), nuevoP);
+                const docIdNuevo = codigoADocId(codigo);
+                await setDoc(doc(db, 'ferreteria_productos', docIdNuevo), nuevoP);
+                registrarUltimaAccion({ tipo: 'crear', docIdNuevo });
                 cerrarModal();
                 mostrarNotificacion(`✅ Producto ${nombre} guardado.`);
             } catch (err) {
@@ -1748,6 +1851,7 @@
                 <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px;">
                     <div><label>Código:</label><input type="text" id="editCodigo" value="${p.codigo}" style="width:100%; padding:8px;"></div>
                     <div><label>Nombre:</label><input type="text" id="editNombre" value="${p.nombre}" style="width:100%; padding:8px;"></div>
+                    <div><label>Proveedor:</label><input type="text" id="editProveedor" value="${p.proveedor || ''}" style="width:100%; padding:8px;" placeholder="(opcional)"></div>
                     <div><label>Stock:</label><input type="number" id="editStock" value="${p.stock}" style="width:100%; padding:8px;"></div>
                     <div><label>Costo base ($):</label><input type="number" id="editCosto" value="${p.costo}" style="width:100%; padding:8px;"></div>
                     <div><label>Margen Ganancia (%):</label><input type="number" id="editMargen" value="${p.margen}" style="width:100%; padding:8px;"></div>
@@ -1771,9 +1875,11 @@
             }
 
             let codigoViejo = productos[index].codigo;
+            let datosAntes = { ...productos[index] };
             let p = { ...productos[index] };
             p.codigo = nuevoCodigo;
             p.nombre = document.getElementById('editNombre').value.trim();
+            p.proveedor = document.getElementById('editProveedor').value.trim() || null;
             p.stock = parseFloat(document.getElementById('editStock').value) || 0;
             p.costo = parseFloat(document.getElementById('editCosto').value) || 0;
             p.margen = parseFloat(document.getElementById('editMargen').value) || 0;
@@ -1785,14 +1891,17 @@
 
             try {
                 const { db, doc, setDoc, writeBatch } = window.FB;
+                const docIdViejo = codigoADocId(codigoViejo);
+                const docIdNuevo = codigoADocId(nuevoCodigo);
                 if (nuevoCodigo !== codigoViejo) {
                     const batch = writeBatch(db);
-                    batch.delete(doc(db, 'ferreteria_productos', codigoViejo));
-                    batch.set(doc(db, 'ferreteria_productos', nuevoCodigo), p);
+                    batch.delete(doc(db, 'ferreteria_productos', docIdViejo));
+                    batch.set(doc(db, 'ferreteria_productos', docIdNuevo), p);
                     await batch.commit();
                 } else {
-                    await setDoc(doc(db, 'ferreteria_productos', codigoViejo), p);
+                    await setDoc(doc(db, 'ferreteria_productos', docIdViejo), p);
                 }
+                registrarUltimaAccion({ tipo: 'editar', docIdAntes: docIdViejo, datosAntes, docIdNuevo });
                 cerrarModal();
                 mostrarNotificacion("✅ Producto actualizado.");
             } catch (err) {
@@ -1805,7 +1914,10 @@
             if (!confirm(`¿Seguro que deseas eliminar ${p.nombre}?`)) return;
             try {
                 const { db, doc, deleteDoc } = window.FB;
-                await deleteDoc(doc(db, 'ferreteria_productos', p.codigo));
+                const docIdAntes = codigoADocId(p.codigo);
+                const datosAntes = { ...p };
+                await deleteDoc(doc(db, 'ferreteria_productos', docIdAntes));
+                registrarUltimaAccion({ tipo: 'eliminar', docIdAntes, datosAntes });
                 mostrarNotificacion("🗑️ Producto eliminado.");
             } catch (err) {
                 mostrarNotificacion('❌ No se pudo eliminar: ' + err.message);
@@ -1825,7 +1937,7 @@
                         let p = { ...original };
                         p.costo = Math.round(p.costo * factor);
                         p.precioVenta = calcularPrecioFinal(p);
-                        batch.set(doc(db, 'ferreteria_productos', p.codigo), p);
+                        batch.set(doc(db, 'ferreteria_productos', codigoADocId(p.codigo)), p);
                     });
                     await batch.commit();
                 }
@@ -1851,30 +1963,58 @@
 
             const reader = new FileReader();
             reader.onload = async function(e) {
+                let wakeLock = null;
                 try {
                     const contenido = JSON.parse(e.target.result);
                     if (!Array.isArray(contenido)) {
                         mostrarNotificacion("❌ Formato de archivo no válido.");
                         return;
                     }
-                    if (!confirm(`Se van a subir ${contenido.length} producto(s) del respaldo a la nube. Los productos con el mismo código se van a actualizar con los datos del respaldo. ¿Continuar?`)) return;
+                    if (!confirm(`Se van a subir ${contenido.length} producto(s) del respaldo a la nube. Los productos con el mismo código se van a actualizar con los datos del respaldo.\n\nNo bloquees ni cierres el celular hasta que termine. ¿Continuar?`)) return;
+
+                    // Intenta evitar que la pantalla se apague durante la subida (si el navegador lo permite)
+                    try {
+                        if ('wakeLock' in navigator) {
+                            wakeLock = await navigator.wakeLock.request('screen');
+                        }
+                    } catch (errWakeLock) { /* si no se puede, seguimos igual */ }
 
                     const { db, doc, writeBatch } = window.FB;
+                    const TAMANO_LOTE = 200;
+                    const totalLotes = Math.ceil(contenido.length / TAMANO_LOTE);
                     let subidos = 0;
-                    for (let i = 0; i < contenido.length; i += 400) {
-                        const lote = contenido.slice(i, i + 400);
-                        const batch = writeBatch(db);
-                        lote.forEach(p => {
-                            if (!p || !p.codigo) return;
-                            p.precioVenta = calcularPrecioFinal(p);
-                            batch.set(doc(db, 'ferreteria_productos', String(p.codigo)), p);
-                            subidos++;
-                        });
-                        await batch.commit();
+                    let lotesConError = 0;
+
+                    for (let i = 0; i < contenido.length; i += TAMANO_LOTE) {
+                        const numeroLote = Math.floor(i / TAMANO_LOTE) + 1;
+                        const lote = contenido.slice(i, i + TAMANO_LOTE);
+                        try {
+                            const batch = writeBatch(db);
+                            let enEsteLote = 0;
+                            lote.forEach(p => {
+                                if (!p || !p.codigo) return;
+                                p.precioVenta = calcularPrecioFinal(p);
+                                batch.set(doc(db, 'ferreteria_productos', codigoADocId(String(p.codigo))), p);
+                                enEsteLote++;
+                            });
+                            await batch.commit();
+                            subidos += enEsteLote;
+                            mostrarNotificacion(`⏳ Lote ${numeroLote} de ${totalLotes} subido (${subidos}/${contenido.length})`);
+                        } catch (errLote) {
+                            lotesConError++;
+                            mostrarNotificacion(`⚠️ Falló el lote ${numeroLote} de ${totalLotes}: ${errLote.message}`);
+                        }
                     }
-                    mostrarNotificacion(`📤 Respaldo cargado: ${subidos} producto(s) subidos a la nube.`);
+
+                    if (lotesConError === 0) {
+                        mostrarNotificacion(`✅ Respaldo cargado: ${subidos} de ${contenido.length} producto(s) subidos a la nube.`);
+                    } else {
+                        mostrarNotificacion(`⚠️ Se subieron ${subidos} de ${contenido.length}. ${lotesConError} lote(s) fallaron: volvé a importar el mismo archivo para completar lo que falta.`);
+                    }
                 } catch (error) {
-                    mostrarNotificacion("❌ Error al leer o subir el archivo JSON: " + error.message);
+                    mostrarNotificacion("❌ Error al leer el archivo JSON: " + error.message);
+                } finally {
+                    if (wakeLock) { try { await wakeLock.release(); } catch (errRelease) {} }
                 }
             };
             reader.readAsText(file);
