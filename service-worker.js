@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tricolor-cache-v1';
+const CACHE_NAME = 'tricolor-cache-v3';
 const ARCHIVOS_BASE = [
   './index.html',
   './manifest.json',
@@ -24,16 +24,11 @@ self.addEventListener('activate', (evento) => {
   self.clients.claim();
 });
 
-// Con internet: trae la versión más nueva y actualiza la copia guardada.
-// Sin internet: usa la última copia guardada.
 self.addEventListener('fetch', (evento) => {
   const peticion = evento.request;
-
-  // Solo controlamos pedidos a nuestro propio sitio (no a Firebase ni a librerías externas)
   if (peticion.method !== 'GET' || new URL(peticion.url).origin !== self.location.origin) {
     return;
   }
-
   evento.respondWith(
     fetch(peticion)
       .then((respuesta) => {

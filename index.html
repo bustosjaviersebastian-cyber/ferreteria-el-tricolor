@@ -356,6 +356,11 @@
             .cartel-titulo { font-size: 16px; }
             table { min-width: 560px; }
         }
+        /* ===== NAVEGACIÓN ENTRE PÁGINAS DEL SITIO ===== */
+        .nav-paginas { display: flex; gap: 8px; flex-wrap: wrap; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 8px; margin-bottom: 16px; }
+        .nav-paginas a { flex: 1 1 auto; text-align: center; padding: 10px 14px; border-radius: 8px; text-decoration: none; color: var(--text); font-weight: 600; font-size: 14px; background: var(--background); }
+        .nav-paginas a.activa { background: var(--primary); color: white; }
+
         /* ===== PANTALLA DE LOGIN ===== */
         #loginScreen {
             display: none;
@@ -375,6 +380,7 @@
         #loginError { color: var(--danger); font-size: 13px; min-height: 18px; text-align: center; margin-top: 4px; }
         #loginCargando { text-align: center; color: #64748b; font-size: 14px; }
         .btn-logout { background: var(--danger); color: white; font-size: 12px; padding: 8px 12px; }
+
     </style>
 </head>
 <body>
@@ -472,7 +478,7 @@
                 <h4 style="margin-bottom: 10px; color: #64748b;">Herramientas Admin</h4>
                 <button class="btn-primary" style="width:100%; margin-bottom: 8px;" onclick="abrirModalNuevoProducto()">➕ Nuevo Producto</button>
                 <button class="btn-danger" style="width:100%; margin-bottom: 8px;" onclick="verReporteFaltantes()">⚠️ Reporte Faltantes (Stock 0)</button>
-                <button class="btn-warning" style="width:100%; margin-bottom: 8px;" onclick="aplicarAumentoGeneral()">📈 Aumento Global %</button>
+                <button class="btn-warning" style="width:100%; margin-bottom: 8px;" onclick="abrirModalAumentoProveedor()">📈 Aumento por Proveedor</button>
                 
                 <!-- Botón 1: Actualización de Precios Rápida -->
                 <button class="btn-secondary" style="width:100%; margin-bottom: 8px; background: #3b82f6;" onclick="document.getElementById('inputExcelPrecios').click()">🔄 Actualizar Precios (2 Col.)</button>
@@ -1388,19 +1394,47 @@
 
             if (faltantes.length === 0) {
                 body.innerHTML = "<p style='text-align:center; padding:20px; color:var(--success); font-weight:bold;'>🎉 ¡Excelente! No hay productos agotados actualmente.</p>";
-            } else {
-                let html = `<p style="margin-bottom:12px; color:#64748b;">Listado de artículos sin stock para reposición:</p>`;
-                html += `<table style="width:100%; border-collapse:collapse;">
+                modal.style.display = 'flex';
+                return;
+            }
+
+            // Agrupar por Proveedor (alfabético, sin proveedor al final)
+            let grupos = {};
+            faltantes.forEach(p => {
+                let prov = (p.proveedor || '').trim() || 'Sin proveedor asignado';
+                if (!grupos[prov]) grupos[prov] = [];
+                grupos[prov].push(p);
+            });
+
+            let nombresProveedores = Object.keys(grupos).sort((a, b) => {
+                if (a === 'Sin proveedor asignado') return 1;
+                if (b === 'Sin proveedor asignado') return -1;
+                return a.localeCompare(b, 'es', { sensitivity: 'base' });
+            });
+
+            let html = `<p style="margin-bottom:12px; color:#64748b;">Listado de artículos sin stock para reposición, agrupado por proveedor:</p>`;
+
+            nombresProveedores.forEach(proveedor => {
+                let items = grupos[proveedor].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
+
+                html += `
+                    <div style="margin-top:18px; margin-bottom:6px; padding:8px 10px; background:#eff6ff; border-left:4px solid var(--primary); font-weight:bold; display:flex; justify-content:space-between;">
+                        <span>🏭 ${proveedor}</span>
+                        <span>${items.length} producto${items.length === 1 ? '' : 's'}</span>
+                    </div>
+                `;
+
+                html += `<table style="width:100%; border-collapse:collapse; margin-bottom:6px;">
                     <thead>
                         <tr style="background:#f1f5f9;">
-                            <th style="padding:8px;">Código</th>
-                            <th style="padding:8px;">Producto</th>
+                            <th style="padding:8px; text-align:left;">Código</th>
+                            <th style="padding:8px; text-align:left;">Producto</th>
                             <th style="padding:8px; text-align:right;">Costo Base</th>
                         </tr>
                     </thead>
                     <tbody>`;
 
-                faltantes.forEach(p => {
+                items.forEach(p => {
                     html += `
                         <tr style="border-bottom:1px solid #e2e8f0;">
                             <td style="padding:8px;"><strong>${p.codigo}</strong></td>
@@ -1410,14 +1444,15 @@
                 });
 
                 html += `</tbody></table>`;
-                html += `
-                    <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center;" class="no-print">
-                        <strong>Total Faltantes: <span style="color:red;">${faltantes.length} productos</span></strong>
-                        <button class="btn-primary" onclick="window.print()">🖨️ Imprimir Listado</button>
-                    </div>
-                `;
-                body.innerHTML = html;
-            }
+            });
+
+            html += `
+                <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center;" class="no-print">
+                    <strong>Total Faltantes: <span style="color:red;">${faltantes.length} productos</span> en ${nombresProveedores.length} proveedor${nombresProveedores.length === 1 ? '' : 'es'}</strong>
+                    <button class="btn-primary" onclick="window.print()">🖨️ Imprimir Listado</button>
+                </div>
+            `;
+            body.innerHTML = html;
             modal.style.display = 'flex';
         }
 
@@ -1924,14 +1959,62 @@
             }
         }
 
-        async function aplicarAumentoGeneral() {
-            const porcentaje = prompt("Ingresa el porcentaje de aumento global para el COSTO BASE (ej: 15 para +15%):");
-            if (!porcentaje || isNaN(porcentaje)) return;
+        function abrirModalAumentoProveedor() {
+            let modal = document.getElementById('modalOperacion');
+            let titulo = document.getElementById('modalTitulo');
+            let body = document.getElementById('modalBody');
+            titulo.textContent = "📈 Aumento por Proveedor";
+
+            let proveedoresUnicos = [...new Set(productos.map(p => (p.proveedor || '').trim()).filter(Boolean))]
+                .sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+
+            if (proveedoresUnicos.length === 0) {
+                body.innerHTML = "<p style='text-align:center; padding:20px; color:#64748b;'>Todavía no hay ningún producto con Proveedor cargado. Cargalo desde '🏭 Actualizar Proveedores' o editando productos uno por uno.</p>";
+                modal.style.display = 'flex';
+                return;
+            }
+
+            let opciones = proveedoresUnicos.map(pr => {
+                let cantidad = productos.filter(p => (p.proveedor || '').trim() === pr).length;
+                return `<option value="${pr}">${pr} (${cantidad} producto${cantidad === 1 ? '' : 's'})</option>`;
+            }).join('');
+
+            body.innerHTML = `
+                <div style="margin-bottom:14px;">
+                    <label style="font-weight:600; display:block; margin-bottom:6px;">Proveedor:</label>
+                    <select id="selectProveedorAumento" style="width:100%; padding:8px;">${opciones}</select>
+                </div>
+                <div style="margin-bottom:18px;">
+                    <label style="font-weight:600; display:block; margin-bottom:6px;">Porcentaje de aumento sobre el COSTO (ej: 15 para +15%, -5 para -5%):</label>
+                    <input type="number" id="inputPorcentajeAumento" style="width:100%; padding:8px;" placeholder="15">
+                </div>
+                <div style="display:flex; justify-content:space-between;">
+                    <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+                    <button class="btn-primary" onclick="aplicarAumentoProveedor()">Aplicar Aumento</button>
+                </div>
+            `;
+            modal.style.display = 'flex';
+        }
+
+        async function aplicarAumentoProveedor() {
+            let proveedor = document.getElementById('selectProveedorAumento').value;
+            let porcentaje = document.getElementById('inputPorcentajeAumento').value;
+            if (!porcentaje || isNaN(porcentaje)) {
+                mostrarNotificacion('⚠️ Ingresá un porcentaje válido.');
+                return;
+            }
+            let afectados = productos.filter(p => (p.proveedor || '').trim() === proveedor);
+            if (afectados.length === 0) {
+                mostrarNotificacion('⚠️ No hay productos de ese proveedor.');
+                return;
+            }
+            if (!confirm(`¿Aplicar ${porcentaje}% de aumento al costo de ${afectados.length} producto(s) de "${proveedor}"?`)) return;
+
             const factor = 1 + (parseFloat(porcentaje) / 100);
             try {
                 const { db, doc, writeBatch } = window.FB;
-                for (let i = 0; i < productos.length; i += 400) {
-                    const lote = productos.slice(i, i + 400);
+                for (let i = 0; i < afectados.length; i += 400) {
+                    const lote = afectados.slice(i, i + 400);
                     const batch = writeBatch(db);
                     lote.forEach(original => {
                         let p = { ...original };
@@ -1941,7 +2024,8 @@
                     });
                     await batch.commit();
                 }
-                mostrarNotificacion(`📈 Aumento del ${porcentaje}% aplicado.`);
+                cerrarModal();
+                mostrarNotificacion(`📈 Aumento del ${porcentaje}% aplicado a ${afectados.length} producto(s) de "${proveedor}".`);
             } catch (err) {
                 mostrarNotificacion('❌ Error al aplicar el aumento: ' + err.message);
             }
@@ -2023,7 +2107,7 @@
     </script>
 
     <!-- ===== CONEXIÓN CON FIREBASE ===== -->
-    <script type="module">
+        <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
         import {
             getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut,
@@ -2031,8 +2115,8 @@
         } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
         import {
             initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-            collection, doc, setDoc, updateDoc, deleteDoc, getDocs, onSnapshot,
-            writeBatch, runTransaction, serverTimestamp
+            collection, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, onSnapshot,
+            writeBatch, runTransaction, serverTimestamp, query, where, orderBy
         } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
         const firebaseConfig = {
@@ -2054,14 +2138,13 @@
                     localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
                 });
             } catch (e) {
-                // Si falla la caché persistente (navegador no compatible), seguimos sin ella
                 db = initializeFirestore(app, {});
             }
 
             window.FB = {
                 app, auth, db,
-                collection, doc, setDoc, updateDoc, deleteDoc, getDocs, onSnapshot,
-                writeBatch, runTransaction, serverTimestamp,
+                collection, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, onSnapshot,
+                writeBatch, runTransaction, serverTimestamp, query, where, orderBy,
                 signInWithEmailAndPassword, signOut
             };
 
@@ -2078,7 +2161,6 @@
             }
         }
 
-        // Registro del Service Worker (PWA)
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./service-worker.js').catch(() => {});
