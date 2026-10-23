@@ -688,6 +688,37 @@
             actualizarRanking();
         }
 
+        // Calcula el Margen (%) necesario para llegar a un Precio de Venta deseado,
+        // dado el costo, descuento e impuestos ya cargados en el formulario.
+        function calcularMargenDesdePrecio(prefijo) {
+            let costo = parseFloat(document.getElementById(prefijo + 'Costo').value) || 0;
+            let descuento = parseFloat(document.getElementById(prefijo + 'Descuento').value) || 0;
+            let impuesto = parseFloat(document.getElementById(prefijo + 'Impuesto').value) || 0;
+            let otro = parseFloat(document.getElementById(prefijo + 'Otro').value) || 0;
+            let precioDeseado = parseFloat(document.getElementById(prefijo + 'PrecioDeseado').value);
+
+            if (!precioDeseado || precioDeseado <= 0) {
+                mostrarNotificacion('⚠️ Ingresá el precio de venta deseado.');
+                return;
+            }
+            if (!costo || costo <= 0) {
+                mostrarNotificacion('⚠️ Ingresá primero el costo base.');
+                return;
+            }
+
+            let costoNeto = costo * (1 - (descuento / 100));
+            let costoFinal = costoNeto * (1 + ((impuesto + otro) / 100));
+
+            if (costoFinal <= 0) {
+                mostrarNotificacion('⚠️ Revisá el costo y los impuestos cargados.');
+                return;
+            }
+
+            let margenCalculado = ((precioDeseado / costoFinal) - 1) * 100;
+            document.getElementById(prefijo + 'Margen').value = Math.round(margenCalculado * 100) / 100;
+            mostrarNotificacion(`✅ Margen calculado: ${margenCalculado.toFixed(2)}%`);
+        }
+
         function calcularPrecioFinal(p) {
             let costoBase = parseFloat(p.costo) || 0;
             let descuento = parseFloat(p.descuento) || 0;
@@ -1640,6 +1671,7 @@
             let { ventas, filtroActivo } = obtenerVentasFiltradas();
 
             let totalEfectivo = 0, totalQR = 0;
+            let costoTotalPeriodo = 0;
             let conteoProductos = {};
 
             ventas.forEach(v => {
@@ -1648,15 +1680,21 @@
                 if (metodo === "QR") totalQR += v.total;
                 v.items.forEach(i => {
                     if (!conteoProductos[i.codigo]) {
-                        conteoProductos[i.codigo] = { nombre: i.nombre, cantidad: 0, subtotal: 0 };
+                        conteoProductos[i.codigo] = { nombre: i.nombre, cantidad: 0, subtotal: 0, ganancia: 0 };
                     }
+                    let costoItem = (i.costo || 0) * i.cantidad;
+                    let ventaItem = Math.round(i.precioVenta) * i.cantidad;
                     conteoProductos[i.codigo].cantidad += i.cantidad;
-                    conteoProductos[i.codigo].subtotal += Math.round(i.precioVenta) * i.cantidad;
+                    conteoProductos[i.codigo].subtotal += ventaItem;
+                    conteoProductos[i.codigo].ganancia += (ventaItem - costoItem);
+                    costoTotalPeriodo += costoItem;
                 });
             });
 
             let totalGeneral = totalEfectivo + totalQR;
-            let rankingProductos = Object.values(conteoProductos).sort((a, b) => b.cantidad - a.cantidad);
+            let gananciaBruta = totalGeneral - costoTotalPeriodo;
+            let margenPeriodo = totalGeneral > 0 ? (gananciaBruta / totalGeneral * 100) : 0;
+            let rankingProductos = Object.values(conteoProductos).sort((a, b) => b.ganancia - a.ganancia);
 
             let periodoTexto = filtroActivo
                 ? `Del ${filtroCierreDesde || 'inicio'} al ${filtroCierreHasta || 'hoy'}`
@@ -1668,6 +1706,7 @@
                     <td style="padding:6px;">${p.nombre}</td>
                     <td style="padding:6px; text-align:center;">${p.cantidad}</td>
                     <td style="padding:6px; text-align:right;">$ ${p.subtotal.toLocaleString()}</td>
+                    <td style="padding:6px; text-align:right; color:var(--success); font-weight:bold;">$ ${Math.round(p.ganancia).toLocaleString()}</td>
                 </tr>
             `).join('');
 
@@ -1684,10 +1723,16 @@
                         <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>💵 Total Efectivo:</span><strong>$ ${totalEfectivo.toLocaleString()}</strong></div>
                         <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>📱 Total QR / Billetera:</span><strong>$ ${totalQR.toLocaleString()}</strong></div>
                         <hr style="border:0; border-top:1px solid #cbd5e1; margin:6px 0;">
-                        <div style="display:flex; justify-content:space-between; font-size:16px;"><span>Total General:</span><strong>$ ${totalGeneral.toLocaleString()}</strong></div>
+                        <div style="display:flex; justify-content:space-between; font-size:16px;"><span>Total General (ingresos):</span><strong>$ ${totalGeneral.toLocaleString()}</strong></div>
                     </div>
 
-                    <div style="font-weight:bold; margin-bottom:6px;">Productos vendidos en el período:</div>
+                    <div style="background:#f0fdf4; padding:12px; border-radius:6px; margin-bottom:16px; border:1px solid #bbf7d0;">
+                        <div style="display:flex; justify-content:space-between; margin-bottom:4px;"><span>📦 Costo de lo vendido:</span><strong>$ ${Math.round(costoTotalPeriodo).toLocaleString()}</strong></div>
+                        <div style="display:flex; justify-content:space-between; font-size:16px;"><span>💰 Ganancia Bruta:</span><strong style="color:var(--success);">$ ${Math.round(gananciaBruta).toLocaleString()}</strong></div>
+                        <div style="display:flex; justify-content:space-between; font-size:13px; color:#64748b;"><span>Margen sobre ventas:</span><span>${margenPeriodo.toFixed(1)}%</span></div>
+                    </div>
+
+                    <div style="font-weight:bold; margin-bottom:6px;">Productos vendidos en el período (ordenados por ganancia):</div>
                     <table style="width:100%; border-collapse:collapse; font-size:13px;">
                         <thead>
                             <tr style="background:#f1f5f9; border-bottom:2px solid #cbd5e1;">
@@ -1695,10 +1740,11 @@
                                 <th style="text-align:left; padding:6px;">Producto</th>
                                 <th style="text-align:center; padding:6px;">Cant.</th>
                                 <th style="text-align:right; padding:6px;">Subtotal</th>
+                                <th style="text-align:right; padding:6px;">Ganancia</th>
                             </tr>
                         </thead>
                         <tbody>
-                            ${filasProductos || '<tr><td colspan="4" style="padding:10px; text-align:center; color:#64748b;">Sin productos en este período.</td></tr>'}
+                            ${filasProductos || '<tr><td colspan="5" style="padding:10px; text-align:center; color:#64748b;">Sin productos en este período.</td></tr>'}
                         </tbody>
                     </table>
                 </div>
@@ -1819,6 +1865,10 @@
                     <div><label>Otros Impuestos (%):</label><input type="number" id="newOtro" style="width:100%; padding:8px;" value="0"></div>
                     <div><label>Descuento Prov. (%):</label><input type="number" id="newDescuento" style="width:100%; padding:8px;" value="0"></div>
                 </div>
+                <div style="margin-top:12px; padding:10px; background:#f0f9ff; border-radius:6px; display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+                    <div style="flex:1; min-width:140px;"><label style="font-size:12px;">O ingresá el Precio de Venta deseado ($):</label><input type="number" id="newPrecioDeseado" style="width:100%; padding:8px;" placeholder="Ej: 5000"></div>
+                    <button type="button" class="btn-secondary" onclick="calcularMargenDesdePrecio('new')">🧮 Calcular Margen</button>
+                </div>
                 <div style="margin-top:20px; text-align:right;">
                     <button class="btn-success" onclick="guardarNuevoProducto()">Guardar Producto</button>
                 </div>
@@ -1893,6 +1943,10 @@
                     <div><label>Impuesto IVA (%):</label><input type="number" id="editImpuesto" value="${p.impuesto}" style="width:100%; padding:8px;"></div>
                     <div><label>Otros Impuestos (%):</label><input type="number" id="editOtro" value="${p.otro}" style="width:100%; padding:8px;"></div>
                     <div><label>Descuento Prov. (%):</label><input type="number" id="editDescuento" value="${p.descuento}" style="width:100%; padding:8px;"></div>
+                </div>
+                <div style="margin-top:12px; padding:10px; background:#f0f9ff; border-radius:6px; display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+                    <div style="flex:1; min-width:140px;"><label style="font-size:12px;">O ingresá el Precio de Venta deseado ($):</label><input type="number" id="editPrecioDeseado" style="width:100%; padding:8px;" placeholder="Ej: 5000"></div>
+                    <button type="button" class="btn-secondary" onclick="calcularMargenDesdePrecio('edit')">🧮 Calcular Margen</button>
                 </div>
                 <div style="margin-top:20px; text-align:right;">
                     <button class="btn-success" onclick="guardarEdicionProducto(${index})">Actualizar Producto</button>
