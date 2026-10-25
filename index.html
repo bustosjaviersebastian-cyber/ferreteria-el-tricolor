@@ -476,6 +476,7 @@
 
             <div class="admin-only" style="margin-top: 25px; padding-top: 15px; border-top: 1px solid var(--border);">
                 <h4 style="margin-bottom: 10px; color: #64748b;">Herramientas Admin</h4>
+                <button class="btn-success" style="width:100%; margin-bottom: 8px;" onclick="verReporteGanancias()">📊 Reporte de Ganancias</button>
                 <button class="btn-primary" style="width:100%; margin-bottom: 8px;" onclick="abrirModalNuevoProducto()">➕ Nuevo Producto</button>
                 <button class="btn-danger" style="width:100%; margin-bottom: 8px;" onclick="verReporteFaltantes()">⚠️ Reporte Faltantes (Stock 0)</button>
                 <button class="btn-warning" style="width:100%; margin-bottom: 8px;" onclick="abrirModalAumentoProveedor()">📈 Aumento por Proveedor</button>
@@ -1532,6 +1533,138 @@
                 }
             }
             return null;
+        }
+
+        function filtroRapidoGanancias(tipo) {
+            const hoy = new Date();
+            const hoyISO = fechaISOLocal(hoy);
+
+            if (tipo === 'hoy') {
+                filtroCierreDesde = hoyISO;
+                filtroCierreHasta = hoyISO;
+            } else if (tipo === 'semana') {
+                const diaSemana = hoy.getDay();
+                const offsetLunes = diaSemana === 0 ? 6 : diaSemana - 1;
+                const lunes = new Date(hoy);
+                lunes.setDate(hoy.getDate() - offsetLunes);
+                filtroCierreDesde = fechaISOLocal(lunes);
+                filtroCierreHasta = hoyISO;
+            } else if (tipo === 'mes') {
+                const primerDia = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
+                filtroCierreDesde = fechaISOLocal(primerDia);
+                filtroCierreHasta = hoyISO;
+            } else if (tipo === 'todo') {
+                filtroCierreDesde = '';
+                filtroCierreHasta = '';
+            }
+            verReporteGanancias();
+        }
+
+        function verReporteGanancias() {
+            if (!esAdmin) {
+                mostrarNotificacion('🔒 Esta sección es solo para administradores.');
+                return;
+            }
+
+            let modal = document.getElementById('modalOperacion');
+            document.getElementById('modalTitulo').textContent = '📊 Reporte de Ganancias';
+
+            let { ventas, filtroActivo, sinFecha } = obtenerVentasFiltradas();
+
+            let facturado = 0, costoMercaderia = 0;
+            let lineas = [];
+
+            ventas.forEach(v => {
+                (v.items || []).forEach(item => {
+                    let costoItem = (item.costo || 0) * item.cantidad;
+                    let ventaItem = Math.round(item.precioVenta) * item.cantidad;
+                    facturado += ventaItem;
+                    costoMercaderia += costoItem;
+                    lineas.push({
+                        fecha: v.fechaDia, hora: v.hora,
+                        nombre: item.nombre, cantidad: item.cantidad,
+                        precioUnit: item.precioVenta, costoUnit: item.costo || 0,
+                        ganancia: ventaItem - costoItem,
+                        timestampMs: v.timestampMs || 0
+                    });
+                });
+            });
+
+            lineas.sort((a, b) => b.timestampMs - a.timestampMs);
+            let ganancia = facturado - costoMercaderia;
+            let margen = facturado > 0 ? (ganancia / facturado * 100) : 0;
+
+            let barraFiltro = `
+                <div class="no-print" style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px;">
+                    <button class="btn-secondary" onclick="filtroRapidoGanancias('hoy')">Hoy</button>
+                    <button class="btn-secondary" onclick="filtroRapidoGanancias('semana')">Esta Semana</button>
+                    <button class="btn-secondary" onclick="filtroRapidoGanancias('mes')">Este Mes</button>
+                    <button class="btn-secondary" onclick="filtroRapidoGanancias('todo')">Histórico</button>
+                </div>
+            `;
+
+            let notaFiltro = filtroActivo
+                ? `<p style="font-size:13px; color:#0369a1; margin-bottom:10px;">Período: ${filtroCierreDesde || 'inicio'} a ${filtroCierreHasta || 'hoy'}${sinFecha > 0 ? ` · ⚠️ ${sinFecha} venta(s) antiguas sin fecha exacta no incluidas` : ''}</p>`
+                : `<p style="font-size:13px; color:#64748b; margin-bottom:10px;">Mostrando el histórico completo (${ventas.length} venta(s))</p>`;
+
+            let tarjetasKPI = `
+                <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:10px; margin-bottom:18px;">
+                    <div style="background:#eff6ff; border-radius:8px; padding:12px; text-align:center;">
+                        <div style="font-size:12px; color:#64748b;">Facturado</div>
+                        <div style="font-size:19px; font-weight:bold; color:var(--primary);">$ ${Math.round(facturado).toLocaleString()}</div>
+                    </div>
+                    <div style="background:#fff7ed; border-radius:8px; padding:12px; text-align:center;">
+                        <div style="font-size:12px; color:#64748b;">Costo Mercadería</div>
+                        <div style="font-size:19px; font-weight:bold; color:var(--warning);">$ ${Math.round(costoMercaderia).toLocaleString()}</div>
+                    </div>
+                    <div style="background:#f0fdf4; border-radius:8px; padding:12px; text-align:center;">
+                        <div style="font-size:12px; color:#64748b;">Ganancia</div>
+                        <div style="font-size:19px; font-weight:bold; color:var(--success);">$ ${Math.round(ganancia).toLocaleString()}</div>
+                    </div>
+                    <div style="background:#f8fafc; border-radius:8px; padding:12px; text-align:center; border:1px solid var(--border);">
+                        <div style="font-size:12px; color:#64748b;">Margen</div>
+                        <div style="font-size:19px; font-weight:bold;">${margen.toFixed(1)}%</div>
+                    </div>
+                </div>
+            `;
+
+            let filasDetalle = lineas.map(l => `
+                <tr style="border-bottom:1px solid #e2e8f0;">
+                    <td style="padding:6px; font-size:12px; color:#64748b;">${l.fecha} ${l.hora}</td>
+                    <td style="padding:6px;">${l.nombre}</td>
+                    <td style="padding:6px; text-align:center;">${l.cantidad}</td>
+                    <td style="padding:6px; text-align:right;">$ ${Math.round(l.precioUnit).toLocaleString()}</td>
+                    <td style="padding:6px; text-align:right; color:#64748b;">$ ${Math.round(l.costoUnit).toLocaleString()}</td>
+                    <td style="padding:6px; text-align:right; color:var(--success); font-weight:bold;">$ ${Math.round(l.ganancia).toLocaleString()}</td>
+                </tr>
+            `).join('');
+
+            let html = barraFiltro + notaFiltro + tarjetasKPI + `
+                <div style="font-weight:bold; margin-bottom:6px;">Detalle venta por venta:</div>
+                <div style="max-height:320px; overflow-y:auto;">
+                    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+                        <thead>
+                            <tr style="background:#f1f5f9; border-bottom:2px solid #cbd5e1; position:sticky; top:0;">
+                                <th style="text-align:left; padding:6px;">Fecha</th>
+                                <th style="text-align:left; padding:6px;">Producto</th>
+                                <th style="text-align:center; padding:6px;">Cant.</th>
+                                <th style="text-align:right; padding:6px;">P. Unit.</th>
+                                <th style="text-align:right; padding:6px;">Costo Unit.</th>
+                                <th style="text-align:right; padding:6px;">Ganancia</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${filasDetalle || '<tr><td colspan="6" style="padding:10px; text-align:center; color:#64748b;">Sin ventas en este período.</td></tr>'}
+                        </tbody>
+                    </table>
+                </div>
+                <div class="no-print" style="text-align:right; margin-top:14px;">
+                    <button class="btn-primary" onclick="window.print()">🖨️ Imprimir</button>
+                </div>
+            `;
+
+            document.getElementById('modalBody').innerHTML = html;
+            modal.style.display = 'flex';
         }
 
         function obtenerVentasFiltradas() {
