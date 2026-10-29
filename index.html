@@ -414,7 +414,12 @@
         </header>
 
         <main class="main-content">
-            <input type="text" id="inputBusqueda" class="search-bar" placeholder="🔍 Buscar producto por código o nombre..." onkeyup="buscarProductos()">
+            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:15px;">
+                <input type="text" id="inputBusqueda" class="search-bar" placeholder="🔍 Buscar producto por código o nombre..." onkeyup="buscarProductos()" style="flex:2 1 240px; width:auto; margin-bottom:0;">
+                <select id="filtroProveedor" class="search-bar" onchange="buscarProductos()" style="flex:1 1 200px; width:auto; margin-bottom:0;">
+                    <option value="">🏭 Todos los proveedores</option>
+                </select>
+            </div>
 
             <div class="table-wrapper">
             <table>
@@ -575,6 +580,73 @@
             }
         }
 
+        // ===== PAGO COMBINADO (efectivo + electrónico/QR en una misma venta) =====
+        let pagoDividido = false;
+        let pagoDivEfectivo = 0; // monto en efectivo cuando se divide el pago (el resto va a QR)
+
+        function totalCarritoActual() {
+            let t = 0;
+            carritoVenta.forEach(i => { t += Math.round(i.precioVenta) * i.cantidad; });
+            if (descuentoAplicadoCarrito) t = Math.round(t * (1 - descuentoConfigurado / 100));
+            return Math.round(t);
+        }
+
+        function activarPagoDividido() {
+            const total = totalCarritoActual();
+            const sel = document.getElementById('tipoMetodoPago');
+            // Arranca desde lo que estaba elegido: todo efectivo o todo QR
+            pagoDivEfectivo = (sel && sel.value === 'QR') ? 0 : total;
+            pagoDividido = true;
+            verCarrito();
+        }
+
+        function cancelarPagoDividido() {
+            pagoDividido = false;
+            verCarrito();
+        }
+
+        // Al escribir en un casillero, el otro se completa solo con lo que falta para llegar al total
+        function editarPagoDividido(campo, valor) {
+            const total = totalCarritoActual();
+            let v = parseFloat(valor);
+            if (isNaN(v) || v < 0) v = 0;
+            const recortado = v > total;
+            if (recortado) v = total;
+            v = Math.round(v * 100) / 100;
+            const resto = Math.round((total - v) * 100) / 100;
+
+            const inEf = document.getElementById('pagoEfectivoInput');
+            const inQr = document.getElementById('pagoQrInput');
+            if (campo === 'efectivo') {
+                pagoDivEfectivo = v;
+                if (inQr) inQr.value = resto;
+                if (recortado && inEf) inEf.value = v;
+            } else {
+                pagoDivEfectivo = resto;
+                if (inEf) inEf.value = resto;
+                if (recortado && inQr) inQr.value = v;
+            }
+        }
+
+        // Cuánto entró por cada método en una venta (también lee ventas viejas, que solo tenían 'metodo')
+        function pagosDeVenta(v) {
+            if (v.pagos && typeof v.pagos === 'object') {
+                return { efectivo: v.pagos.efectivo || 0, qr: v.pagos.qr || 0 };
+            }
+            return (v.metodo === 'QR')
+                ? { efectivo: 0, qr: v.total || 0 }
+                : { efectivo: v.total || 0, qr: 0 };
+        }
+
+        // Texto para mostrar la forma de pago de una venta
+        function etiquetaPago(v) {
+            const p = pagosDeVenta(v);
+            if (p.efectivo > 0 && p.qr > 0) {
+                return `Efectivo $${Math.round(p.efectivo).toLocaleString()} + QR $${Math.round(p.qr).toLocaleString()}`;
+            }
+            return p.qr > 0 ? 'QR' : 'Efectivo';
+        }
+
         // Agrupa por Proveedor (alfabético, sin proveedor al final) y dentro de cada proveedor, alfabético por Nombre
         function compararProductos(a, b) {
             let provA = (a.proveedor || '').trim();
@@ -689,35 +761,43 @@
             actualizarRanking();
         }
 
-        // Calcula el Margen (%) necesario para llegar a un Precio de Venta deseado,
-        // dado el costo, descuento e impuestos ya cargados en el formulario.
-        function calcularMargenDesdePrecio(prefijo) {
+        // Recalcula y muestra el Precio Final EN VIVO, con cada tecla que se escribe
+        // en Costo / Margen / Impuesto / Otro / Descuento.
+        function actualizarPrecioEnVivo(prefijo) {
+            let costo = parseFloat(document.getElementById(prefijo + 'Costo').value) || 0;
+            let margen = parseFloat(document.getElementById(prefijo + 'Margen').value) || 0;
+            let impuesto = parseFloat(document.getElementById(prefijo + 'Impuesto').value) || 0;
+            let otro = parseFloat(document.getElementById(prefijo + 'Otro').value) || 0;
+            let descuento = parseFloat(document.getElementById(prefijo + 'Descuento').value) || 0;
+
+            let precioFinal = calcularPrecioFinal({ costo, margen, impuesto, otro, descuento });
+
+            let display = document.getElementById(prefijo + 'PrecioFinalDisplay');
+            if (display) display.textContent = `$ ${precioFinal.toLocaleString('es-AR')}`;
+        }
+
+        // Camino inverso: escribiendo el Precio de Venta deseado, recalcula el Margen
+        // EN VIVO (sin botón), y de paso refresca el cartel de Precio Final.
+        function recalcularMargenEnVivo(prefijo) {
             let costo = parseFloat(document.getElementById(prefijo + 'Costo').value) || 0;
             let descuento = parseFloat(document.getElementById(prefijo + 'Descuento').value) || 0;
             let impuesto = parseFloat(document.getElementById(prefijo + 'Impuesto').value) || 0;
             let otro = parseFloat(document.getElementById(prefijo + 'Otro').value) || 0;
             let precioDeseado = parseFloat(document.getElementById(prefijo + 'PrecioDeseado').value);
 
-            if (!precioDeseado || precioDeseado <= 0) {
-                mostrarNotificacion('⚠️ Ingresá el precio de venta deseado.');
-                return;
-            }
-            if (!costo || costo <= 0) {
-                mostrarNotificacion('⚠️ Ingresá primero el costo base.');
+            if (!precioDeseado || precioDeseado <= 0 || !costo || costo <= 0) {
+                actualizarPrecioEnVivo(prefijo);
                 return;
             }
 
             let costoNeto = costo * (1 - (descuento / 100));
             let costoFinal = costoNeto * (1 + ((impuesto + otro) / 100));
-
-            if (costoFinal <= 0) {
-                mostrarNotificacion('⚠️ Revisá el costo y los impuestos cargados.');
-                return;
-            }
+            if (costoFinal <= 0) { actualizarPrecioEnVivo(prefijo); return; }
 
             let margenCalculado = ((precioDeseado / costoFinal) - 1) * 100;
             document.getElementById(prefijo + 'Margen').value = Math.round(margenCalculado * 100) / 100;
-            mostrarNotificacion(`✅ Margen calculado: ${margenCalculado.toFixed(2)}%`);
+
+            actualizarPrecioEnVivo(prefijo);
         }
 
         function calcularPrecioFinal(p) {
@@ -796,12 +876,50 @@
             if (btnQuitar) btnQuitar.style.display = 'none';
         }
 
+        // Mantiene al día la lista de proveedores del desplegable (solo se reconstruye si cambió)
+        let firmaProveedoresFiltro = null;
+        function actualizarOpcionesFiltroProveedor() {
+            const sel = document.getElementById('filtroProveedor');
+            if (!sel) return;
+
+            const conteo = {};
+            let haySinProveedor = false;
+            productos.forEach(p => {
+                const pr = (p.proveedor || '').trim();
+                if (pr) conteo[pr] = (conteo[pr] || 0) + 1;
+                else haySinProveedor = true;
+            });
+            const nombres = Object.keys(conteo).sort((a, b) => a.localeCompare(b, 'es', { sensitivity: 'base' }));
+
+            const firma = nombres.map(n => n + ':' + conteo[n]).join('|') + '|' + haySinProveedor;
+            if (firma === firmaProveedoresFiltro) return;
+            firmaProveedoresFiltro = firma;
+
+            const seleccionActual = sel.value;
+            sel.innerHTML = '';
+            sel.appendChild(new Option('🏭 Todos los proveedores', ''));
+            nombres.forEach(n => sel.appendChild(new Option(`${n} (${conteo[n]})`, n)));
+            if (haySinProveedor) sel.appendChild(new Option('Sin proveedor asignado', '__sin__'));
+
+            // Si el proveedor elegido ya no existe, vuelve a "Todos"
+            const sigueExistiendo = Array.from(sel.options).some(o => o.value === seleccionActual);
+            sel.value = sigueExistiendo ? seleccionActual : '';
+        }
+
         function buscarProductos(mantenerPagina = false) {
+            actualizarOpcionesFiltroProveedor();
             let busqueda = document.getElementById('inputBusqueda').value.toLowerCase().trim();
-            productosFiltrados = productos.filter(p => 
-                p.codigo.toLowerCase().includes(busqueda) || 
-                p.nombre.toLowerCase().includes(busqueda)
-            );
+            let filtroProv = document.getElementById('filtroProveedor').value;
+            productosFiltrados = productos.filter(p => {
+                const prov = (p.proveedor || '').trim();
+                if (filtroProv === '__sin__') {
+                    if (prov) return false;
+                } else if (filtroProv) {
+                    if (prov !== filtroProv) return false;
+                }
+                return p.codigo.toLowerCase().includes(busqueda) ||
+                       p.nombre.toLowerCase().includes(busqueda);
+            });
             productosFiltrados.sort(compararProductos);
             
             if (!mantenerPagina) {
@@ -1169,6 +1287,7 @@
             titulo.textContent = "🛒 Carrito de Ventas";
             
             if (carritoVenta.length === 0) {
+                pagoDividido = false;
                 body.innerHTML = "<p style='text-align:center; padding:20px; color:#64748b;'>El carrito está vacío.</p>";
             } else {
                 let html = `<table style="width:100%; border-collapse:collapse;">
@@ -1217,17 +1336,41 @@
 
                 let textoBtnDesc = descuentoAplicadoCarrito ? `❌ Quitar Descuento (${descuentoConfigurado}%)` : `🏷️ Aplicar Descuento (${descuentoConfigurado}%)`;
 
+                let bloquePago;
+                if (!pagoDividido) {
+                    bloquePago = `
+                        <select id="tipoMetodoPago" style="padding: 10px; font-weight: bold; border-radius:6px; border:1px solid #cbd5e1;">
+                            <option value="Efectivo">💵 Efectivo</option>
+                            <option value="QR">📱 Electrónico / QR</option>
+                        </select>
+                        <button class="btn-secondary" onclick="activarPagoDividido()">➗ Dividir pago</button>`;
+                } else {
+                    let efectivoDiv = Math.min(Math.max(pagoDivEfectivo, 0), totalFinal);
+                    efectivoDiv = Math.round(efectivoDiv * 100) / 100;
+                    let qrDiv = Math.round((totalFinal - efectivoDiv) * 100) / 100;
+                    pagoDivEfectivo = efectivoDiv;
+                    bloquePago = `
+                        <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:10px; display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end;">
+                            <div>
+                                <label style="font-size:12px; display:block;">💵 Efectivo ($)</label>
+                                <input type="number" id="pagoEfectivoInput" value="${efectivoDiv}" min="0" max="${totalFinal}" step="any" style="width:120px; padding:8px;" oninput="editarPagoDividido('efectivo', this.value)">
+                            </div>
+                            <div>
+                                <label style="font-size:12px; display:block;">📱 Electrónico / QR ($)</label>
+                                <input type="number" id="pagoQrInput" value="${qrDiv}" min="0" max="${totalFinal}" step="any" style="width:120px; padding:8px;" oninput="editarPagoDividido('qr', this.value)">
+                            </div>
+                            <button class="btn-secondary" onclick="cancelarPagoDividido()">✖ Un solo método</button>
+                        </div>`;
+                }
+
                 html += `
                     <div style="margin-top:20px; display:flex; gap:10px; justify-content:space-between; align-items:center; flex-wrap:wrap;" class="no-print">
                         <div style="display:flex; gap:10px;">
-                            <button class="btn-danger" onclick="carritoVenta=[]; descuentoAplicadoCarrito=false; actualizarTotalesCarrito(); verCarrito();">Vaciar</button>
+                            <button class="btn-danger" onclick="carritoVenta=[]; descuentoAplicadoCarrito=false; pagoDividido=false; actualizarTotalesCarrito(); verCarrito();">Vaciar</button>
                             <button class="btn-warning" onclick="toggleDescuentoCarrito()">${textoBtnDesc}</button>
                         </div>
-                        <div style="display:flex; gap:10px; align-items:center;">
-                            <select id="tipoMetodoPago" style="padding: 10px; font-weight: bold; border-radius:6px; border:1px solid #cbd5e1;">
-                                <option value="Efectivo">💵 Efectivo</option>
-                                <option value="QR">📱 QR (Billetera)</option>
-                            </select>
+                        <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                            ${bloquePago}
                             <button class="btn-success" style="font-size: 15px; padding: 11px 18px;" onclick="concretarVenta()">✅ Concretar Venta</button>
                         </div>
                     </div>`;
@@ -1277,7 +1420,6 @@
         async function concretarVenta() {
             if (carritoVenta.length === 0) return;
 
-            let metodoPago = document.getElementById('tipoMetodoPago').value;
             const ahora = new Date();
             const opcionesFecha = { weekday: 'long', year: 'numeric', month: 'numeric', day: 'numeric' };
             let fechaActualStr = ahora.toLocaleDateString('es-ES', opcionesFecha);
@@ -1291,6 +1433,21 @@
                 totalVenta = Math.round(totalVenta * (1 - descuentoConfigurado / 100));
             }
             totalVenta = Math.round(totalVenta);
+
+            // Cuánto entra por cada método (un solo método, o pago dividido)
+            let metodoPago, pagos;
+            if (pagoDividido) {
+                let ef = Math.min(Math.max(pagoDivEfectivo, 0), totalVenta);
+                ef = Math.round(ef * 100) / 100;
+                let qr = Math.round((totalVenta - ef) * 100) / 100;
+                pagos = { efectivo: ef, qr: qr };
+                metodoPago = (ef > 0 && qr > 0) ? 'Mixto' : (qr > 0 ? 'QR' : 'Efectivo');
+            } else {
+                metodoPago = document.getElementById('tipoMetodoPago').value;
+                pagos = (metodoPago === 'QR')
+                    ? { efectivo: 0, qr: totalVenta }
+                    : { efectivo: totalVenta, qr: 0 };
+            }
 
             const btnConcretar = document.getElementById('btnConcretarVenta');
             if (btnConcretar) btnConcretar.disabled = true;
@@ -1325,6 +1482,7 @@
                         items: itemsVenta,
                         total: totalVenta,
                         metodo: metodoPago,
+                        pagos: pagos,
                         vendedor: (window.FB.auth.currentUser && window.FB.auth.currentUser.email) || ''
                     });
 
@@ -1337,11 +1495,13 @@
                     hora: horaActualStr,
                     items: itemsVenta,
                     total: totalVenta,
-                    metodo: metodoPago
+                    metodo: metodoPago,
+                    pagos: pagos
                 });
 
                 carritoVenta = [];
                 descuentoAplicadoCarrito = false;
+                pagoDividido = false;
                 actualizarTotalesCarrito();
             } catch (err) {
                 mostrarNotificacion('❌ No se pudo registrar la venta: ' + err.message);
@@ -1370,7 +1530,7 @@
                     </div>
 
                     <div style="margin-bottom: 12px; font-size: 14px;">
-                        <strong>FORMA DE PAGO:</strong> <span style="text-transform: uppercase;">${venta.metodo}</span>
+                        <strong>FORMA DE PAGO:</strong> <span style="text-transform: uppercase;">${etiquetaPago(venta)}</span>
                     </div>
 
                     <table style="width: 100%; border-collapse: collapse; margin-bottom: 15px; font-size: 14px;">
@@ -1413,9 +1573,23 @@
             modal.style.display = 'flex';
         }
 
+        let filtroProveedorFaltantes = '__todos__';
+        let listaProveedoresFaltantes = [];
+
         function verReporteFaltantes() {
             if (!esAdmin) return;
+            filtroProveedorFaltantes = '__todos__';
+            renderReporteFaltantes();
+        }
 
+        function cambiarProveedorFaltantes(valor) {
+            filtroProveedorFaltantes = (valor === '__todos__')
+                ? '__todos__'
+                : listaProveedoresFaltantes[parseInt(valor)];
+            renderReporteFaltantes();
+        }
+
+        function renderReporteFaltantes() {
             let modal = document.getElementById('modalOperacion');
             let titulo = document.getElementById('modalTitulo');
             let body = document.getElementById('modalBody');
@@ -1443,18 +1617,48 @@
                 if (b === 'Sin proveedor asignado') return -1;
                 return a.localeCompare(b, 'es', { sensitivity: 'base' });
             });
+            listaProveedoresFaltantes = nombresProveedores;
 
-            let html = `<p style="margin-bottom:12px; color:#64748b;">Listado de artículos sin stock para reposición, agrupado por proveedor:</p>`;
+            // Si el proveedor elegido ya no tiene faltantes, vuelve a "Todos"
+            if (filtroProveedorFaltantes !== '__todos__' && !grupos[filtroProveedorFaltantes]) {
+                filtroProveedorFaltantes = '__todos__';
+            }
 
-            nombresProveedores.forEach(proveedor => {
+            let esTodos = filtroProveedorFaltantes === '__todos__';
+            let proveedoresAMostrar = esTodos ? nombresProveedores : [filtroProveedorFaltantes];
+            let cantidadMostrada = proveedoresAMostrar.reduce((acc, pr) => acc + grupos[pr].length, 0);
+
+            let opciones = `<option value="__todos__" ${esTodos ? 'selected' : ''}>Todos los proveedores (agrupado)</option>` +
+                nombresProveedores.map((pr, i) =>
+                    `<option value="${i}" ${pr === filtroProveedorFaltantes ? 'selected' : ''}>${pr} (${grupos[pr].length})</option>`
+                ).join('');
+
+            const hoyTxt = new Date().toLocaleDateString('es-ES', { year: 'numeric', month: 'numeric', day: 'numeric' });
+
+            let html = `
+                <div class="no-print" style="margin-bottom:14px;">
+                    <label style="font-weight:600; font-size:13px; display:block; margin-bottom:4px;">Proveedor:</label>
+                    <select style="width:100%; padding:8px;" onchange="cambiarProveedorFaltantes(this.value)">${opciones}</select>
+                </div>
+
+                <div style="margin-bottom:10px; padding-bottom:8px; border-bottom:2px solid #000;">
+                    <div style="font-size:18px; font-weight:bold;">FERRETERÍA EL TRICOLOR — Faltantes de stock</div>
+                    <div style="font-size:14px;"><strong>Proveedor:</strong> ${esTodos ? 'Todos los proveedores' : filtroProveedorFaltantes}</div>
+                    <div style="font-size:13px; color:#475569;">Fecha: ${hoyTxt} · ${cantidadMostrada} producto${cantidadMostrada === 1 ? '' : 's'}</div>
+                </div>
+            `;
+
+            proveedoresAMostrar.forEach(proveedor => {
                 let items = grupos[proveedor].sort((a, b) => a.nombre.localeCompare(b.nombre, 'es', { sensitivity: 'base' }));
 
-                html += `
-                    <div style="margin-top:18px; margin-bottom:6px; padding:8px 10px; background:#eff6ff; border-left:4px solid var(--primary); font-weight:bold; display:flex; justify-content:space-between;">
-                        <span>🏭 ${proveedor}</span>
-                        <span>${items.length} producto${items.length === 1 ? '' : 's'}</span>
-                    </div>
-                `;
+                if (esTodos) {
+                    html += `
+                        <div style="margin-top:18px; margin-bottom:6px; padding:8px 10px; background:#eff6ff; border-left:4px solid var(--primary); font-weight:bold; display:flex; justify-content:space-between;">
+                            <span>🏭 ${proveedor}</span>
+                            <span>${items.length} producto${items.length === 1 ? '' : 's'}</span>
+                        </div>
+                    `;
+                }
 
                 html += `<table style="width:100%; border-collapse:collapse; margin-bottom:6px;">
                     <thead>
@@ -1480,7 +1684,7 @@
 
             html += `
                 <div style="margin-top:20px; display:flex; justify-content:space-between; align-items:center;" class="no-print">
-                    <strong>Total Faltantes: <span style="color:red;">${faltantes.length} productos</span> en ${nombresProveedores.length} proveedor${nombresProveedores.length === 1 ? '' : 'es'}</strong>
+                    <strong>Total Faltantes: <span style="color:red;">${cantidadMostrada} producto${cantidadMostrada === 1 ? '' : 's'}</span>${esTodos ? ` en ${nombresProveedores.length} proveedor${nombresProveedores.length === 1 ? '' : 'es'}` : ''}</strong>
                     <button class="btn-primary" onclick="window.print()">🖨️ Imprimir Listado</button>
                 </div>
             `;
@@ -1735,11 +1939,14 @@
             html += `<div class="scroll-inner-modal" style="max-height: 280px; overflow-y: auto; padding-right:5px;">`;
 
             ventas.forEach((v) => {
-                let metodo = v.metodo || "Efectivo";
-                if (metodo === "Efectivo") totalEfectivo += v.total;
-                if (metodo === "QR") totalQR += v.total;
+                let pg = pagosDeVenta(v);
+                totalEfectivo += pg.efectivo;
+                totalQR += pg.qr;
 
-                let badgeMetodo = metodo === "Efectivo" ? "💵 Efectivo" : "📱 QR";
+                let esMixto = pg.efectivo > 0 && pg.qr > 0;
+                let badgeMetodo = esMixto
+                    ? `💵📱 ${etiquetaPago(v)}`
+                    : (pg.qr > 0 ? "📱 QR" : "💵 Efectivo");
                 let itemsStr = v.items.map(i => `${i.nombre} (x${i.cantidad})`).join(', ');
                 
                 html += `
@@ -1808,9 +2015,9 @@
             let conteoProductos = {};
 
             ventas.forEach(v => {
-                let metodo = v.metodo || "Efectivo";
-                if (metodo === "Efectivo") totalEfectivo += v.total;
-                if (metodo === "QR") totalQR += v.total;
+                let pg = pagosDeVenta(v);
+                totalEfectivo += pg.efectivo;
+                totalQR += pg.qr;
                 v.items.forEach(i => {
                     if (!conteoProductos[i.codigo]) {
                         conteoProductos[i.codigo] = { nombre: i.nombre, cantidad: 0, subtotal: 0, ganancia: 0 };
@@ -1992,21 +2199,25 @@
                     <div><label>Nombre:</label><input type="text" id="newNombre" style="width:100%; padding:8px;"></div>
                     <div><label>Proveedor:</label><input type="text" id="newProveedor" style="width:100%; padding:8px;" placeholder="(opcional)"></div>
                     <div><label>Stock inicial:</label><input type="number" id="newStock" style="width:100%; padding:8px;" value="0"></div>
-                    <div><label>Costo base ($):</label><input type="number" id="newCosto" style="width:100%; padding:8px;" value="0"></div>
-                    <div><label>Margen Ganancia (%):</label><input type="number" id="newMargen" style="width:100%; padding:8px;" value="30"></div>
-                    <div><label>Impuesto IVA (%):</label><input type="number" id="newImpuesto" style="width:100%; padding:8px;" value="0"></div>
-                    <div><label>Otros Impuestos (%):</label><input type="number" id="newOtro" style="width:100%; padding:8px;" value="0"></div>
-                    <div><label>Descuento Prov. (%):</label><input type="number" id="newDescuento" style="width:100%; padding:8px;" value="0"></div>
+                    <div><label>Costo base ($):</label><input type="number" id="newCosto" style="width:100%; padding:8px;" value="0" oninput="actualizarPrecioEnVivo('new')"></div>
+                    <div><label>Margen Ganancia (%):</label><input type="number" id="newMargen" style="width:100%; padding:8px;" value="30" oninput="actualizarPrecioEnVivo('new')"></div>
+                    <div><label>Impuesto IVA (%):</label><input type="number" id="newImpuesto" style="width:100%; padding:8px;" value="0" oninput="actualizarPrecioEnVivo('new')"></div>
+                    <div><label>Otros Impuestos (%):</label><input type="number" id="newOtro" style="width:100%; padding:8px;" value="0" oninput="actualizarPrecioEnVivo('new')"></div>
+                    <div><label>Descuento Prov. (%):</label><input type="number" id="newDescuento" style="width:100%; padding:8px;" value="0" oninput="actualizarPrecioEnVivo('new')"></div>
                 </div>
                 <div style="margin-top:12px; padding:10px; background:#f0f9ff; border-radius:6px; display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
-                    <div style="flex:1; min-width:140px;"><label style="font-size:12px;">O ingresá el Precio de Venta deseado ($):</label><input type="number" id="newPrecioDeseado" style="width:100%; padding:8px;" placeholder="Ej: 5000"></div>
-                    <button type="button" class="btn-secondary" onclick="calcularMargenDesdePrecio('new')">🧮 Calcular Margen</button>
+                    <div style="flex:1; min-width:140px;"><label style="font-size:12px;">O ingresá el Precio de Venta deseado ($) y el Margen se ajusta solo:</label><input type="number" id="newPrecioDeseado" style="width:100%; padding:8px;" placeholder="Ej: 5000" oninput="recalcularMargenEnVivo('new')"></div>
+                </div>
+                <div style="margin-top:14px; padding:14px; background:#f0fdf4; border:2px solid var(--success); border-radius:8px; text-align:center;">
+                    <div style="font-size:13px; color:#64748b;">PRECIO FINAL DE VENTA</div>
+                    <div id="newPrecioFinalDisplay" style="font-size:28px; font-weight:bold; color:var(--success);">$ 0</div>
                 </div>
                 <div style="margin-top:20px; text-align:right;">
                     <button class="btn-success" onclick="guardarNuevoProducto()">Guardar Producto</button>
                 </div>
             `;
             modal.style.display = 'flex';
+            actualizarPrecioEnVivo('new');
         }
 
         async function guardarNuevoProducto() {
@@ -2071,21 +2282,25 @@
                     <div><label>Nombre:</label><input type="text" id="editNombre" value="${p.nombre}" style="width:100%; padding:8px;"></div>
                     <div><label>Proveedor:</label><input type="text" id="editProveedor" value="${p.proveedor || ''}" style="width:100%; padding:8px;" placeholder="(opcional)"></div>
                     <div><label>Stock:</label><input type="number" id="editStock" value="${p.stock}" style="width:100%; padding:8px;"></div>
-                    <div><label>Costo base ($):</label><input type="number" id="editCosto" value="${p.costo}" style="width:100%; padding:8px;"></div>
-                    <div><label>Margen Ganancia (%):</label><input type="number" id="editMargen" value="${p.margen}" style="width:100%; padding:8px;"></div>
-                    <div><label>Impuesto IVA (%):</label><input type="number" id="editImpuesto" value="${p.impuesto}" style="width:100%; padding:8px;"></div>
-                    <div><label>Otros Impuestos (%):</label><input type="number" id="editOtro" value="${p.otro}" style="width:100%; padding:8px;"></div>
-                    <div><label>Descuento Prov. (%):</label><input type="number" id="editDescuento" value="${p.descuento}" style="width:100%; padding:8px;"></div>
+                    <div><label>Costo base ($):</label><input type="number" id="editCosto" value="${p.costo}" style="width:100%; padding:8px;" oninput="actualizarPrecioEnVivo('edit')"></div>
+                    <div><label>Margen Ganancia (%):</label><input type="number" id="editMargen" value="${p.margen}" style="width:100%; padding:8px;" oninput="actualizarPrecioEnVivo('edit')"></div>
+                    <div><label>Impuesto IVA (%):</label><input type="number" id="editImpuesto" value="${p.impuesto}" style="width:100%; padding:8px;" oninput="actualizarPrecioEnVivo('edit')"></div>
+                    <div><label>Otros Impuestos (%):</label><input type="number" id="editOtro" value="${p.otro}" style="width:100%; padding:8px;" oninput="actualizarPrecioEnVivo('edit')"></div>
+                    <div><label>Descuento Prov. (%):</label><input type="number" id="editDescuento" value="${p.descuento}" style="width:100%; padding:8px;" oninput="actualizarPrecioEnVivo('edit')"></div>
                 </div>
                 <div style="margin-top:12px; padding:10px; background:#f0f9ff; border-radius:6px; display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
-                    <div style="flex:1; min-width:140px;"><label style="font-size:12px;">O ingresá el Precio de Venta deseado ($):</label><input type="number" id="editPrecioDeseado" style="width:100%; padding:8px;" placeholder="Ej: 5000"></div>
-                    <button type="button" class="btn-secondary" onclick="calcularMargenDesdePrecio('edit')">🧮 Calcular Margen</button>
+                    <div style="flex:1; min-width:140px;"><label style="font-size:12px;">O ingresá el Precio de Venta deseado ($) y el Margen se ajusta solo:</label><input type="number" id="editPrecioDeseado" style="width:100%; padding:8px;" placeholder="Ej: 5000" oninput="recalcularMargenEnVivo('edit')"></div>
+                </div>
+                <div style="margin-top:14px; padding:14px; background:#f0fdf4; border:2px solid var(--success); border-radius:8px; text-align:center;">
+                    <div style="font-size:13px; color:#64748b;">PRECIO FINAL DE VENTA</div>
+                    <div id="editPrecioFinalDisplay" style="font-size:28px; font-weight:bold; color:var(--success);">$ ${Math.round(p.precioVenta).toLocaleString('es-AR')}</div>
                 </div>
                 <div style="margin-top:20px; text-align:right;">
                     <button class="btn-success" onclick="guardarEdicionProducto(${index})">Actualizar Producto</button>
                 </div>
             `;
             modal.style.display = 'flex';
+            actualizarPrecioEnVivo('edit');
         }
 
         async function guardarEdicionProducto(index) {
