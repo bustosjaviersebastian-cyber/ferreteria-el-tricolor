@@ -546,6 +546,8 @@
         // ===== DESHACER (solo la última acción propia, no afecta cambios de otros usuarios) =====
         let ultimaAccion = null;
 
+        function redondear2(x) { return Math.round(x * 100) / 100; }
+
         function registrarUltimaAccion(accion) {
             ultimaAccion = accion;
             actualizarBotonDeshacer();
@@ -560,8 +562,41 @@
             if (!ultimaAccion) return;
             const accion = ultimaAccion;
             try {
-                const { db, doc, setDoc, deleteDoc } = window.FB;
-                if (accion.tipo === 'crear') {
+                const { db, doc, setDoc, deleteDoc, runTransaction } = window.FB;
+                if (accion.tipo === 'abrir') {
+                    // Se revierte con una transacción: solo toca lo que esta apertura movió,
+                    // sin pisar ventas o cambios que hayan hecho otros mientras tanto.
+                    await runTransaction(db, async (tx) => {
+                        const bolsaRef = doc(db, 'ferreteria_productos', accion.bolsaDocId);
+                        const sueltoRef = doc(db, 'ferreteria_productos', accion.sueltoDocId);
+                        const bolsaSnap = await tx.get(bolsaRef);
+                        const sueltoSnap = await tx.get(sueltoRef);
+
+                        if (!sueltoSnap.exists()) throw new Error('El artículo suelto ya no existe. Corregí el stock a mano.');
+                        const suelto = sueltoSnap.data();
+                        if ((suelto.stock || 0) < accion.kgNuevos - 0.001) {
+                            throw new Error('Ya se vendió parte de esos kg, no se puede deshacer. Corregí el stock a mano.');
+                        }
+                        const stockSuelto = redondear2((suelto.stock || 0) - accion.kgNuevos);
+
+                        if (bolsaSnap.exists()) {
+                            tx.update(bolsaRef, { stock: redondear2((bolsaSnap.data().stock || 0) + accion.bolsas) });
+                        } else {
+                            tx.set(bolsaRef, { ...accion.bolsaAntes });
+                        }
+
+                        if (accion.sueltoCreado && stockSuelto <= 0.001) {
+                            tx.delete(sueltoRef);
+                        } else {
+                            const restaurado = { ...suelto, stock: stockSuelto };
+                            if (!accion.sueltoCreado && accion.sueltoAntes) {
+                                restaurado.costo = accion.sueltoAntes.costo;
+                                restaurado.precioVenta = accion.sueltoAntes.precioVenta;
+                            }
+                            tx.set(sueltoRef, restaurado);
+                        }
+                    });
+                } else if (accion.tipo === 'crear') {
                     await deleteDoc(doc(db, 'ferreteria_productos', accion.docIdNuevo));
                 } else if (accion.tipo === 'editar') {
                     if (accion.docIdNuevo !== accion.docIdAntes) {
@@ -947,12 +982,13 @@
                 let tr = document.createElement('tr');
                 let stockColor = p.stock <= 0 ? 'color: red; font-weight: bold;' : (p.stock <= 5 ? 'color: orange; font-weight: bold;' : '');
                 
-                let stockHTML = p.stock === 0 ? 'AGOTADO (0)' : p.stock;
+                const sufijoKg = p.esSuelto ? ' kg' : '';
+                let stockHTML = p.stock === 0 ? 'AGOTADO (0)' : (p.stock + sufijoKg);
                 if (esAdmin) {
                     stockHTML = `
                         <div style="display:flex; align-items:center;">
                             <button class="btn-stock-quick" onclick="modificarStockRapido(${indexOriginal}, -1)">-</button>
-                            <span style="margin:0 6px; ${stockColor}">${p.stock}</span>
+                            <span style="margin:0 6px; ${stockColor}">${p.stock}${sufijoKg}</span>
                             <button class="btn-stock-quick" onclick="modificarStockRapido(${indexOriginal}, 1)">+</button>
                         </div>
                     `;
@@ -967,13 +1003,14 @@
                 tr.innerHTML = `
                     <td>${fotoHTML}</td>
                     <td>${p.codigo}</td>
-                    <td>${p.nombre}</td>
+                    <td>${p.nombre}${(p.kgPorBolsa > 0 && !p.esSuelto) ? ` <span style="font-size:11px; color:#64748b;">(bolsa ${p.kgPorBolsa} kg)</span>` : ''}</td>
                     <td>${p.proveedor || '<span style="color:#cbd5e1;">—</span>'}</td>
                     <td>${stockHTML}</td>
                     <td class="admin-only">$ ${p.costo.toLocaleString()}</td>
                     <td><strong>$ ${p.precioVenta.toLocaleString()}</strong></td>
                     <td>
                         <button class="btn-success" onclick="agregarAlCarrito(${indexOriginal})">🛒 Agregar</button>
+                        ${(p.kgPorBolsa > 0 && !p.esSuelto) ? `<button class="btn-primary" onclick="abrirBolsa(${indexOriginal})" style="margin-left:5px;" ${p.stock < 1 ? 'disabled' : ''}>📦 Abrir</button>` : ''}
                         ${esAdmin ? `<button class="btn-warning" onclick="editarProducto(${indexOriginal})" style="margin-left:5px;">✏️</button>` : ''}
                         ${esAdmin ? `<button class="btn-danger" onclick="eliminarProducto(${indexOriginal})" style="margin-left:5px;">🗑️</button>` : ''}
                     </td>
@@ -984,6 +1021,120 @@
             let totalPaginas = Math.ceil(productosFiltrados.length / itemsPorPagina) || 1;
             document.getElementById('numPagina').textContent = `${paginaActual} / ${totalPaginas}`;
             document.getElementById('infoPaginacion').textContent = `Mostrando ${paginaItems.length} de ${productosFiltrados.length} productos`;
+        }
+
+        // ===== ABRIR BOLSA (alimento balanceado: de bolsa cerrada a kg sueltos) =====
+        let bolsaAbrirDocId = null;
+        let abriendoBolsa = false;
+
+        function abrirBolsa(index) {
+            const p = productos[index];
+            if (!p) return;
+            const kg = parseFloat(p.kgPorBolsa) || 0;
+            if (kg <= 0) { mostrarNotificacion('⚠️ Este producto no tiene "Kg por bolsa" cargado.'); return; }
+            if (p.stock < 1) { mostrarNotificacion('⚠️ No hay bolsas en stock para abrir.'); return; }
+
+            // Se guarda el ID (no la posición): la lista se reordena sola cuando llegan cambios de otros dispositivos
+            bolsaAbrirDocId = codigoADocId(p.codigo);
+
+            document.getElementById('modalTitulo').textContent = '📦 Abrir bolsa';
+            document.getElementById('modalBody').innerHTML = `
+                <p style="margin-bottom:12px;"><strong>${p.nombre}</strong><br>
+                    <span style="font-size:13px; color:#64748b;">Bolsa de ${kg} kg · Stock actual: ${p.stock} bolsa(s)</span></p>
+                <label style="font-weight:600; display:block; margin-bottom:6px;">¿Cuántas bolsas abrís?</label>
+                <input type="number" id="cantBolsasAbrir" value="1" min="1" max="${Math.floor(p.stock)}" step="1" style="width:100%; padding:8px;" oninput="actualizarVistaAbrirBolsa(${kg})">
+                <div id="vistaAbrirBolsa" style="margin-top:12px; padding:10px; background:#f0fdf4; border-radius:6px; font-size:14px;"></div>
+                <div style="margin-top:18px; display:flex; justify-content:space-between;">
+                    <button class="btn-secondary" onclick="cerrarModal()">Cancelar</button>
+                    <button class="btn-success" onclick="confirmarAbrirBolsa()">📦 Abrir</button>
+                </div>`;
+            document.getElementById('modalOperacion').style.display = 'flex';
+            actualizarVistaAbrirBolsa(kg);
+        }
+
+        function actualizarVistaAbrirBolsa(kg) {
+            const n = parseInt(document.getElementById('cantBolsasAbrir').value) || 0;
+            const vista = document.getElementById('vistaAbrirBolsa');
+            if (!vista) return;
+            vista.textContent = n >= 1
+                ? `Se descuentan ${n} bolsa(s) y se suman ${redondear2(n * kg)} kg al artículo suelto.`
+                : 'Ingresá una cantidad de bolsas.';
+        }
+
+        async function confirmarAbrirBolsa() {
+            if (abriendoBolsa) return; // evita abrir dos veces por un doble toque
+            const n = parseInt(document.getElementById('cantBolsasAbrir').value);
+            if (!n || n < 1) { mostrarNotificacion('⚠️ Ingresá cuántas bolsas abrís.'); return; }
+            if (!bolsaAbrirDocId) return;
+
+            const bolsaDocId = bolsaAbrirDocId;
+            const sueltoDocId = bolsaDocId + '-S';
+            abriendoBolsa = true;
+
+            try {
+                const { db, doc, runTransaction } = window.FB;
+                const bolsaRef = doc(db, 'ferreteria_productos', bolsaDocId);
+                const sueltoRef = doc(db, 'ferreteria_productos', sueltoDocId);
+
+                const res = await runTransaction(db, async (tx) => {
+                    const bolsaSnap = await tx.get(bolsaRef);
+                    const sueltoSnap = await tx.get(sueltoRef);
+
+                    if (!bolsaSnap.exists()) throw new Error('El producto ya no existe.');
+                    const bolsa = bolsaSnap.data();
+                    const kg = parseFloat(bolsa.kgPorBolsa) || 0;
+                    if (kg <= 0) throw new Error('Este producto no tiene "Kg por bolsa" cargado.');
+                    if ((bolsa.stock || 0) < n) throw new Error(`Solo hay ${bolsa.stock || 0} bolsa(s) en stock.`);
+
+                    const sueltoAntes = sueltoSnap.exists() ? sueltoSnap.data() : null;
+                    if (sueltoAntes && !sueltoAntes.esSuelto) {
+                        throw new Error(`Ya existe otro producto con el código ${bolsa.codigo}-S que no es un suelto. Cambiale el código y volvé a intentar.`);
+                    }
+
+                    const kgNuevos = redondear2(n * kg);
+                    const costoKg = Math.round((bolsa.costo / kg) * 10000) / 10000;
+
+                    let sueltoNuevo;
+                    if (sueltoAntes) {
+                        // Ya existía: suma los kg y actualiza el costo; el margen que tenga se respeta
+                        sueltoNuevo = { ...sueltoAntes, stock: redondear2((sueltoAntes.stock || 0) + kgNuevos), costo: costoKg };
+                    } else {
+                        sueltoNuevo = {
+                            codigo: bolsa.codigo + '-S',
+                            nombre: bolsa.nombre + ' (SUELTO)',
+                            proveedor: bolsa.proveedor || null,
+                            stock: kgNuevos,
+                            costo: costoKg,
+                            margen: bolsa.margen,
+                            impuesto: bolsa.impuesto,
+                            otro: bolsa.otro,
+                            descuento: bolsa.descuento,
+                            foto: bolsa.foto || null,
+                            kgPorBolsa: null,
+                            esSuelto: true,
+                            bolsaCodigo: bolsa.codigo
+                        };
+                    }
+                    sueltoNuevo.precioVenta = calcularPrecioFinal(sueltoNuevo);
+
+                    tx.update(bolsaRef, { stock: redondear2((bolsa.stock || 0) - n) });
+                    tx.set(sueltoRef, sueltoNuevo);
+
+                    return { bolsaAntes: bolsa, sueltoAntes, sueltoCreado: !sueltoAntes, kgNuevos, nombre: bolsa.nombre };
+                });
+
+                registrarUltimaAccion({
+                    tipo: 'abrir', bolsaDocId, sueltoDocId,
+                    bolsaAntes: res.bolsaAntes, sueltoAntes: res.sueltoAntes,
+                    sueltoCreado: res.sueltoCreado, bolsas: n, kgNuevos: res.kgNuevos
+                });
+                cerrarModal();
+                mostrarNotificacion(`📦 ${n} bolsa(s) abierta(s): +${res.kgNuevos} kg sueltos de ${res.nombre}.`);
+            } catch (err) {
+                mostrarNotificacion('❌ No se pudo abrir: ' + err.message);
+            } finally {
+                abriendoBolsa = false;
+            }
         }
 
         async function modificarStockRapido(index, delta) {
@@ -1206,6 +1357,7 @@
                     if (codigo && nombre) {
                         let existente = productos.find(p => p.codigo === codigo);
                         let nuevoP = {
+                            ...(existente || {}),
                             codigo,
                             nombre,
                             proveedor: existente ? (existente.proveedor || null) : null,
@@ -1255,7 +1407,7 @@
                     return;
                 }
             } else {
-                carritoVenta.push({ ...p, cantidad: 1 });
+                carritoVenta.push({ ...p, cantidad: Math.min(1, p.stock) }); // si queda menos de 1 (ej: 0,5 kg suelto), agrega solo lo que hay
             }
             actualizarTotalesCarrito();
             mostrarNotificacion(`🛒 ${p.nombre} agregado`);
@@ -1596,7 +1748,7 @@
 
             titulo.textContent = "📋 Reporte de Productos Faltantes (Stock 0)";
 
-            let faltantes = productos.filter(p => p.stock <= 0);
+            let faltantes = productos.filter(p => p.stock <= 0 && !p.esSuelto);
 
             if (faltantes.length === 0) {
                 body.innerHTML = "<p style='text-align:center; padding:20px; color:var(--success); font-weight:bold;'>🎉 ¡Excelente! No hay productos agotados actualmente.</p>";
@@ -2199,6 +2351,7 @@
                     <div><label>Nombre:</label><input type="text" id="newNombre" style="width:100%; padding:8px;"></div>
                     <div><label>Proveedor:</label><input type="text" id="newProveedor" style="width:100%; padding:8px;" placeholder="(opcional)"></div>
                     <div><label>Stock inicial:</label><input type="number" id="newStock" style="width:100%; padding:8px;" value="0"></div>
+                    <div><label>Kg por bolsa (solo alimentos):</label><input type="number" id="newKgBolsa" step="any" min="0" style="width:100%; padding:8px;" placeholder="Ej: 25"></div>
                     <div><label>Costo base ($):</label><input type="number" id="newCosto" style="width:100%; padding:8px;" value="0" oninput="actualizarPrecioEnVivo('new')"></div>
                     <div><label>Margen Ganancia (%):</label><input type="number" id="newMargen" style="width:100%; padding:8px;" value="30" oninput="actualizarPrecioEnVivo('new')"></div>
                     <div><label>Impuesto IVA (%):</label><input type="number" id="newImpuesto" style="width:100%; padding:8px;" value="0" oninput="actualizarPrecioEnVivo('new')"></div>
@@ -2245,6 +2398,7 @@
                 impuesto: parseFloat(document.getElementById('newImpuesto').value) || 0,
                 otro: parseFloat(document.getElementById('newOtro').value) || 0,
                 descuento: parseFloat(document.getElementById('newDescuento').value) || 0,
+                kgPorBolsa: parseFloat(document.getElementById('newKgBolsa').value) || null,
                 foto: fotoNuevaBase64 || null
             };
             nuevoP.precioVenta = calcularPrecioFinal(nuevoP);
@@ -2281,7 +2435,8 @@
                     <div><label>Código:</label><input type="text" id="editCodigo" value="${p.codigo}" style="width:100%; padding:8px;"></div>
                     <div><label>Nombre:</label><input type="text" id="editNombre" value="${p.nombre}" style="width:100%; padding:8px;"></div>
                     <div><label>Proveedor:</label><input type="text" id="editProveedor" value="${p.proveedor || ''}" style="width:100%; padding:8px;" placeholder="(opcional)"></div>
-                    <div><label>Stock:</label><input type="number" id="editStock" value="${p.stock}" style="width:100%; padding:8px;"></div>
+                    <div><label>Stock${p.esSuelto ? ' (kg)' : ''}:</label><input type="number" id="editStock" value="${p.stock}" step="any" style="width:100%; padding:8px;"></div>
+                    ${p.esSuelto ? '' : `<div><label>Kg por bolsa (solo alimentos):</label><input type="number" id="editKgBolsa" value="${p.kgPorBolsa || ''}" step="any" min="0" style="width:100%; padding:8px;" placeholder="Ej: 25"></div>`}
                     <div><label>Costo base ($):</label><input type="number" id="editCosto" value="${p.costo}" style="width:100%; padding:8px;" oninput="actualizarPrecioEnVivo('edit')"></div>
                     <div><label>Margen Ganancia (%):</label><input type="number" id="editMargen" value="${p.margen}" style="width:100%; padding:8px;" oninput="actualizarPrecioEnVivo('edit')"></div>
                     <div><label>Impuesto IVA (%):</label><input type="number" id="editImpuesto" value="${p.impuesto}" style="width:100%; padding:8px;" oninput="actualizarPrecioEnVivo('edit')"></div>
@@ -2324,6 +2479,8 @@
             p.otro = parseFloat(document.getElementById('editOtro').value) || 0;
             p.descuento = parseFloat(document.getElementById('editDescuento').value) || 0;
             p.foto = fotoEditBase64 || null;
+            const campoKgBolsa = document.getElementById('editKgBolsa');
+            if (campoKgBolsa) p.kgPorBolsa = parseFloat(campoKgBolsa.value) || null;
             p.precioVenta = calcularPrecioFinal(p);
 
             try {
