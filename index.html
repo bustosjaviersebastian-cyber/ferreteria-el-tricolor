@@ -15,7 +15,7 @@
     <meta name="apple-mobile-web-app-title" content="El Tricolor">
 
     <!-- Librería XLSX para procesamiento de Excel (XLS, XLSX y CSV) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="./xlsx.full.min.js" defer></script>
     <style>
         :root {
             --primary: #2563eb;
@@ -380,6 +380,10 @@
         #loginError { color: var(--danger); font-size: 13px; min-height: 18px; text-align: center; margin-top: 4px; }
         #loginCargando { text-align: center; color: #64748b; font-size: 14px; }
         .btn-logout { background: var(--danger); color: white; font-size: 12px; padding: 8px 12px; }
+        .estado-conexion { font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 14px; }
+        .estado-ok { background: #dcfce7; color: #166534; }
+        .estado-sync { background: #fef3c7; color: #92400e; }
+        .estado-offline { background: #fee2e2; color: #991b1b; }
 
     </style>
 </head>
@@ -404,6 +408,7 @@
         <header>
             <h1 class="cartel-titulo">🛠️ FERRETERIA EL TRICOLOR</h1>
             <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                <span id="estadoConexion" class="estado-conexion estado-ok">🟢 En línea</span>
                 <span id="usuarioActualLabel" style="font-size:12px; color:#64748b;"></span>
                 <button id="btnDeshacer" class="btn-warning" onclick="deshacerUltimaAccion()" disabled title="Deshace solo tu último cambio en un producto">↶ Deshacer último cambio</button>
                 <div id="adminBadge" style="display:none; background: #fef3c7; color: #92400e; padding: 6px 14px; border-radius: 20px; font-weight: bold; font-size: 12px; border: 1px solid #fde68a;">
@@ -748,19 +753,64 @@
             document.getElementById('loginCargando').textContent = '⚠️ ' + mensaje;
         };
 
+        // ===== ESTADO DE CONEXIÓN =====
+        let pendientesProductos = false, pendientesVentas = false;
+
+        function actualizarEstadoConexion() {
+            const el = document.getElementById('estadoConexion');
+            if (!el) return;
+            const enLinea = navigator.onLine !== false;
+            const pendientes = pendientesProductos || pendientesVentas;
+            if (!enLinea) {
+                el.textContent = pendientes ? '📴 Sin conexión · cambios guardados en el equipo' : '📴 Sin conexión';
+                el.className = 'estado-conexion estado-offline';
+            } else if (pendientes) {
+                el.textContent = '⏳ Sincronizando…';
+                el.className = 'estado-conexion estado-sync';
+            } else {
+                el.textContent = '🟢 En línea';
+                el.className = 'estado-conexion estado-ok';
+            }
+        }
+        window.addEventListener('online', actualizarEstadoConexion);
+        window.addEventListener('offline', actualizarEstadoConexion);
+
         function iniciarSincronizacion() {
             const { db, collection, onSnapshot } = window.FB;
+            let primeraVezProductos = true, primeraVezVentas = true;
 
             if (unsubProductos) unsubProductos();
-            unsubProductos = onSnapshot(collection(db, 'ferreteria_productos'), (snap) => {
-                productos = snap.docs.map(d => d.data());
+            unsubProductos = onSnapshot(collection(db, 'ferreteria_productos'), { includeMetadataChanges: true }, (snap) => {
+                if (snap.metadata.hasPendingWrites !== pendientesProductos) {
+                    pendientesProductos = snap.metadata.hasPendingWrites;
+                    actualizarEstadoConexion();
+                }
+                // Si solo cambió el estado de sincronización (no los datos), no hace falta redibujar
+                const cambiaronDatos = primeraVezProductos || snap.docChanges().length > 0;
+                primeraVezProductos = false;
+                if (!cambiaronDatos) return;
+
+                // El stock se redondea a 2 decimales: al descontar kg con increment pueden quedar restos como 12.499999999
+                productos = snap.docs.map(d => {
+                    const p = d.data();
+                    if (typeof p.stock === 'number') p.stock = Math.round(p.stock * 100) / 100;
+                    return p;
+                });
                 guardarYRenderizar(false, true);
             }, (err) => {
                 mostrarNotificacion('⚠️ Error de sincronización de productos: ' + err.message);
             });
 
             if (unsubVentas) unsubVentas();
-            unsubVentas = onSnapshot(collection(db, 'ferreteria_ventas'), (snap) => {
+            unsubVentas = onSnapshot(collection(db, 'ferreteria_ventas'), { includeMetadataChanges: true }, (snap) => {
+                if (snap.metadata.hasPendingWrites !== pendientesVentas) {
+                    pendientesVentas = snap.metadata.hasPendingWrites;
+                    actualizarEstadoConexion();
+                }
+                const cambiaronDatos = primeraVezVentas || snap.docChanges().length > 0;
+                primeraVezVentas = false;
+                if (!cambiaronDatos) return;
+
                 historialVentas = snap.docs.map(d => d.data());
                 historialVentas.sort((a, b) => (a.timestampMs || 0) - (b.timestampMs || 0));
                 actualizarRanking();
@@ -1028,6 +1078,7 @@
         let abriendoBolsa = false;
 
         function abrirBolsa(index) {
+            if (navigator.onLine === false) { mostrarNotificacion('📴 Abrir bolsa necesita conexión a internet por ahora.'); return; }
             const p = productos[index];
             if (!p) return;
             const kg = parseFloat(p.kgPorBolsa) || 0;
@@ -1131,7 +1182,8 @@
                 cerrarModal();
                 mostrarNotificacion(`📦 ${n} bolsa(s) abierta(s): +${res.kgNuevos} kg sueltos de ${res.nombre}.`);
             } catch (err) {
-                mostrarNotificacion('❌ No se pudo abrir: ' + err.message);
+                const sinRed = navigator.onLine === false || /offline|unavailable|connection/i.test(err.message);
+                mostrarNotificacion(sinRed ? '📴 Sin conexión: abrir bolsa necesita internet.' : '❌ No se pudo abrir: ' + err.message);
             } finally {
                 abriendoBolsa = false;
             }
@@ -1569,16 +1621,23 @@
             verCarrito();
         }
 
-        async function concretarVenta() {
+        // Número de remito = fecha y hora de la venta (ej. 251107-153045). No usa contador compartido, así se puede vender sin internet.
+        function numeroDeRemito(fecha) {
+            const dos = (n) => String(n).padStart(2, '0');
+            return `${String(fecha.getFullYear()).slice(2)}${dos(fecha.getMonth() + 1)}${dos(fecha.getDate())}-${dos(fecha.getHours())}${dos(fecha.getMinutes())}${dos(fecha.getSeconds())}`;
+        }
+
+        function concretarVenta() {
             if (carritoVenta.length === 0) return;
 
             const ahora = new Date();
             const opcionesFecha = { weekday: 'long', year: 'numeric', month: 'numeric', day: 'numeric' };
-            let fechaActualStr = ahora.toLocaleDateString('es-ES', opcionesFecha);
-            let horaActualStr = ahora.toLocaleTimeString();
-            let fechaISO = fechaISOLocal(ahora); // YYYY-MM-DD en hora local, para filtrar por rango
+            const fechaActualStr = ahora.toLocaleDateString('es-ES', opcionesFecha);
+            const horaActualStr = ahora.toLocaleTimeString();
+            const fechaISO = fechaISOLocal(ahora);
 
-            const itemsVenta = [...carritoVenta];
+            // Sin la foto: no hace falta guardarla en cada venta y engorda el documento
+            const itemsVenta = carritoVenta.map(({ foto, ...resto }) => resto);
             let totalVenta = 0;
             itemsVenta.forEach(item => { totalVenta += Math.round(item.precioVenta) * item.cantidad; });
             if (descuentoAplicadoCarrito) {
@@ -1601,65 +1660,43 @@
                     : { efectivo: totalVenta, qr: 0 };
             }
 
-            const btnConcretar = document.getElementById('btnConcretarVenta');
-            if (btnConcretar) btnConcretar.disabled = true;
+            const numeroVenta = numeroDeRemito(ahora);
+            const { db, doc, collection, writeBatch, increment } = window.FB;
+            const batch = writeBatch(db);
 
-            try {
-                const { db, doc, collection, runTransaction } = window.FB;
-                const ventaRef = doc(collection(db, 'ferreteria_ventas'));
+            // El stock se descuenta con increment: funciona sin conexión y suma bien entre dispositivos
+            itemsVenta.forEach(item => {
+                if (productos.some(p => p.codigo === item.codigo)) {
+                    batch.update(doc(db, 'ferreteria_productos', codigoADocId(item.codigo)), { stock: increment(-item.cantidad) });
+                }
+            });
+            batch.set(doc(collection(db, 'ferreteria_ventas')), {
+                id: numeroVenta,
+                fechaDia: fechaActualStr,
+                fechaISO: fechaISO,
+                hora: horaActualStr,
+                timestampMs: ahora.getTime(),
+                items: itemsVenta,
+                total: totalVenta,
+                metodo: metodoPago,
+                pagos: pagos,
+                vendedor: (window.FB.auth.currentUser && window.FB.auth.currentUser.email) || ''
+            });
 
-                const numeroVenta = await runTransaction(db, async (tx) => {
-                    const refsProductos = itemsVenta.map(item => doc(db, 'ferreteria_productos', codigoADocId(item.codigo)));
-                    const snapsProductos = await Promise.all(refsProductos.map(r => tx.get(r)));
+            // No se espera al servidor: la venta queda guardada en el equipo y se sincroniza sola al haber conexión
+            batch.commit().catch((err) => {
+                alert(`⚠️ La venta ${numeroVenta} NO se pudo guardar en el servidor: ${err.message}\n\nAnotala y avisale al administrador.`);
+            });
 
-                    const contadorRef = doc(db, 'ferreteria_config', 'contadorVentas');
-                    const contadorSnap = await tx.get(contadorRef);
-                    const siguienteNumero = (contadorSnap.exists() ? (contadorSnap.data().valor || 0) : 0) + 1;
-
-                    snapsProductos.forEach((snap, i) => {
-                        if (snap.exists()) {
-                            let data = snap.data();
-                            let nuevoStock = Math.round(((data.stock || 0) - itemsVenta[i].cantidad) * 100) / 100;
-                            tx.update(refsProductos[i], { stock: nuevoStock });
-                        }
-                    });
-
-                    tx.set(contadorRef, { valor: siguienteNumero });
-                    tx.set(ventaRef, {
-                        id: String(siguienteNumero).padStart(6, '0'),
-                        fechaDia: fechaActualStr,
-                        fechaISO: fechaISO,
-                        hora: horaActualStr,
-                        timestampMs: ahora.getTime(),
-                        items: itemsVenta,
-                        total: totalVenta,
-                        metodo: metodoPago,
-                        pagos: pagos,
-                        vendedor: (window.FB.auth.currentUser && window.FB.auth.currentUser.email) || ''
-                    });
-
-                    return siguienteNumero;
-                });
-
-                mostrarConfirmacionVenta({
-                    id: String(numeroVenta).padStart(6, '0'),
-                    fechaDia: fechaActualStr,
-                    hora: horaActualStr,
-                    items: itemsVenta,
-                    total: totalVenta,
-                    metodo: metodoPago,
-                    pagos: pagos
-                });
-
-                carritoVenta = [];
-                descuentoAplicadoCarrito = false;
-                pagoDividido = false;
-                actualizarTotalesCarrito();
-            } catch (err) {
-                mostrarNotificacion('❌ No se pudo registrar la venta: ' + err.message);
-            } finally {
-                if (btnConcretar) btnConcretar.disabled = false;
-            }
+            const remitoVenta = {
+                id: numeroVenta, fechaDia: fechaActualStr, hora: horaActualStr,
+                items: itemsVenta, total: totalVenta, metodo: metodoPago, pagos: pagos
+            };
+            carritoVenta = [];
+            descuentoAplicadoCarrito = false;
+            pagoDividido = false;
+            actualizarTotalesCarrito();
+            mostrarConfirmacionVenta(remitoVenta);
         }
 
         function mostrarConfirmacionVenta(venta) {
@@ -2666,60 +2703,10 @@
     </script>
 
     <!-- ===== CONEXIÓN CON FIREBASE ===== -->
-        <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-        import {
-            getAuth, onAuthStateChanged, signInWithEmailAndPassword, signOut,
-            setPersistence, browserLocalPersistence
-        } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-        import {
-            initializeFirestore, persistentLocalCache, persistentMultipleTabManager,
-            collection, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, onSnapshot,
-            writeBatch, runTransaction, serverTimestamp, query, where, orderBy
-        } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+    <script src="./firebase-bundle.js"></script>
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyCj_REcv4DD829iE4UiseOZnNFwgnHmlyM",
-            authDomain: "ferreteria-el-tricolor.firebaseapp.com",
-            projectId: "ferreteria-el-tricolor",
-            storageBucket: "ferreteria-el-tricolor.firebasestorage.app",
-            messagingSenderId: "494503742085",
-            appId: "1:494503742085:web:85945403e86b1ee3fbf7ec"
-        };
-
-        try {
-            const app = initializeApp(firebaseConfig);
-            const auth = getAuth(app);
-
-            let db;
-            try {
-                db = initializeFirestore(app, {
-                    localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
-                });
-            } catch (e) {
-                db = initializeFirestore(app, {});
-            }
-
-            window.FB = {
-                app, auth, db,
-                collection, doc, setDoc, updateDoc, deleteDoc, getDoc, getDocs, onSnapshot,
-                writeBatch, runTransaction, serverTimestamp, query, where, orderBy,
-                signInWithEmailAndPassword, signOut
-            };
-
-            setPersistence(auth, browserLocalPersistence).finally(() => {
-                onAuthStateChanged(auth, (user) => {
-                    if (typeof window.onFirebaseAuthReady === 'function') {
-                        window.onFirebaseAuthReady(user);
-                    }
-                });
-            });
-        } catch (e) {
-            if (typeof window.onFirebaseAuthError === 'function') {
-                window.onFirebaseAuthError('No se pudo conectar con el servidor. Revisá tu conexión a internet.');
-            }
-        }
-
+    <!-- Registro del service worker (aparte de Firebase, para que se registre aunque Firebase falle) -->
+    <script>
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./service-worker.js').catch(() => {});
